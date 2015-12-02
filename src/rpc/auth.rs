@@ -18,7 +18,7 @@ pub const BIND_TEMP_AUTH_KEY: ConstructorId = ConstructorId(0xcdd42a05);
 pub const SEND_SMS: ConstructorId = ConstructorId(0xda9f3e8);
 
 pub fn check_phone<'a, R: Read, W: Write>(context: &'a mut RpcContext<'a, R, W>, phone_number: &str) -> tl::Result<auth::CheckedPhone> {
-	let phone_number = tl::SendStr(phone_number);
-	context.command(CHECK_PHONE).invoke((&phone_number,))
+    let phone_number = tl::SendStr(phone_number);
+    context.command(CHECK_PHONE).invoke((&phone_number,))
 }
 

@@ -8,15 +8,15 @@ pub struct String(pub string::String);
 pub struct SendStr<'a>(pub &'a str);
 
 impl From<string::String> for String {
-	fn from(string: string::String) -> String {
-		String(string)
-	}
+    fn from(string: string::String) -> String {
+        String(string)
+    }
 }
 
 impl<'a> From<&'a str> for SendStr<'a> {
-	fn from(string: &'a str) -> SendStr<'a> {
-		SendStr(string)
-	}
+    fn from(string: &'a str) -> SendStr<'a> {
+        SendStr(string)
+    }
 }
 
 impl<'a> Type for String {
@@ -44,6 +44,8 @@ impl<'a> Type for String {
         
         let mut bytes = vec![0; len];
         try!(reader.read_exact(&mut bytes));
+        try!(reader.align(4));
+        
         Ok(String(try!(string::String::from_utf8(bytes))))
     }
     
@@ -62,7 +64,7 @@ impl<'a> Type for SendStr<'a> {
     }
     
     fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> tl::Result<()> {
-		let len = self.0.len();
+        let len = self.0.len();
         assert!(len & 0xFF000000 == 0); // len fits in a 24-bit integer
         
         // Writing string length is WAT
@@ -77,7 +79,7 @@ impl<'a> Type for SendStr<'a> {
         // Write the actual string and padding
         try!(writer.write_all(self.0.as_bytes()));
         try!(writer.pad(4));
-		
+        
         Ok(())
     }
     
