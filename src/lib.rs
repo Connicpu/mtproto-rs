@@ -10,5 +10,7 @@ pub fn standard_schema() -> Schema {
     
     schema.add_constructor(tl::Bool(true));
     schema.add_constructor(tl::Bool(false));
+    
+    schema
 }
 
