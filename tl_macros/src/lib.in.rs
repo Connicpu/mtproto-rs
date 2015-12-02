@@ -111,6 +111,14 @@ fn impl_item_enum(
         enum_def
     );
     
+    let deserialize = impl_enum_deserialize(
+        cx,
+        builder,
+        type_ident,
+        ty.clone(),
+        enum_def
+    );
+    
     quote_item!(
         cx,
         impl ::tl::Type for $ty {
@@ -139,6 +147,7 @@ fn impl_item_enum(
                 id: ::tl::parsing::ConstructorId,
                 reader: &mut ::tl::parsing::ReadContext<R>
             ) -> ::tl::Result<Self> {
+                $deserialize
             }
         }
     ).unwrap()
@@ -375,7 +384,7 @@ fn impl_enum_deserialize(
     let arms: Vec<ast::Arm> = enum_def.variants.iter()
         .enumerate()
         .map(|(variant_index, variant)| {
-            impl_enum_serialize_arm(
+            impl_enum_deserialize_arm(
                 cx,
                 builder,
                 type_ident,
@@ -387,10 +396,67 @@ fn impl_enum_deserialize(
         .collect();
         
     quote_expr!(cx,
-        match *self {
+        match id.0 {
             $arms
+            _ => Err(::tl::error::Error::InvalidType)
+            // TODO
         }
     )
+}
+
+fn impl_enum_deserialize_arm(
+    cx: &ExtCtxt,
+    builder: &aster::AstBuilder,
+    type_ident: ast::Ident,
+    ty: P<ast::Ty>,
+    variant: &ast::Variant,
+    variant_index: usize,
+) -> ast::Arm {
+    let type_name = builder.expr().str(type_ident);
+    let variant_ident = variant.node.name;
+    let variant_name = builder.expr().str(variant_ident);
+    
+    let var_id = variant.node.attrs.iter().filter_map(|attr| {
+        if let ast::MetaList(ref n, ref list) = attr.node.value.node {
+            if &**n == "tl_id" {
+                if let ast::MetaWord(ref n) = list[0].node {
+                    let id = u32::from_str_radix(&(**n)[1..], 16).unwrap();
+                    return Some(id);
+                }
+            }
+        }
+        None
+    }).next().unwrap();
+    
+    match variant.node.data {
+        ast::VariantData::Unit(_) => {
+            
+            quote_arm!(cx,
+                $var_id => {
+                    Err(::tl::error::Error::InvalidData)
+                }
+            )
+        }
+        ast::VariantData::Tuple(ref fields, _) => {
+            //let field_names: Vec<ast::Ident> = (0..fields.len())
+            //    .map(|i| builder.id(format!("__field{}", i)))
+            //    .collect();
+            
+            quote_arm!(cx,
+                $var_id => {
+                    Err(::tl::error::Error::InvalidData)
+                }
+            )
+        }
+        ast::VariantData::Struct(ref fields, _) => {
+            
+            quote_arm!(cx,
+                $var_id => {
+                    Err(::tl::error::Error::InvalidData)
+                }
+            )
+        }
+    }
 }
 
 pub fn register(registry: &mut Registry) {
