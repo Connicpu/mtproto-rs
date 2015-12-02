@@ -6,8 +6,8 @@ use tl::parsing::{ConstructorId, ReadContext, WriteContext};
 pub struct Bool(pub bool);
 
 impl Bool {
-    pub const TRUE: ConstructorId = ConstructorId(0xbc799737);
-    pub const FALSE: ConstructorId = ConstructorId(0x997275b5);
+    pub const TRUE: ConstructorId = ConstructorId(0x997275b5);
+    pub const FALSE: ConstructorId = ConstructorId(0xbc799737);
 }
 
 impl Type for Bool {

@@ -5,8 +5,8 @@ use tl::parsing::{ConstructorId, ReadContext, WriteContext};
 pub mod auth;
 
 pub struct RpcContext<'a, R: Read + 'a, W: Write + 'a> {
-    reader: &'a mut ReadContext<'a, R>,
-    writer: &'a mut WriteContext<'a, W>,
+    reader: &'a mut ReadContext<R>,
+    writer: &'a mut WriteContext<W>,
 }
 
 pub struct RpcCommand<'a, R: Read + 'a, W: Write + 'a> {
@@ -15,7 +15,7 @@ pub struct RpcCommand<'a, R: Read + 'a, W: Write + 'a> {
 }
 
 impl<'a, R: Read + 'a, W: Write + 'a> RpcContext<'a, R, W> {
-    pub fn create(read: &'a mut ReadContext<'a, R>, write: &'a mut WriteContext<'a, W>) -> Self {
+    pub fn create(read: &'a mut ReadContext<R>, write: &'a mut WriteContext<W>) -> Self {
         RpcContext {
             reader: read,
             writer: write,

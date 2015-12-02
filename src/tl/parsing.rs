@@ -5,17 +5,24 @@ use tl;
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ConstructorId(pub u32);
 
-pub struct ReadContext<'a, R: Read + 'a> {
-    stream: &'a mut R,
+pub struct ReadContext<R: Read> {
+    stream: R,
     position: u64,
 }
 
-pub struct WriteContext<'a, W: Write + 'a> {
-    stream: &'a mut W,
+pub struct WriteContext<W: Write> {
+    stream: W,
     position: u64,
 }
 
-impl<'a, R: Read> ReadContext<'a, R> {
+impl<R: Read> ReadContext<R> {
+    pub fn new(reader: R) -> Self {
+        ReadContext {
+            stream: reader,
+            position: 0,
+        }
+    }
+    
     pub fn read_boxed<T: tl::Type>(&mut self) -> tl::Result<T> {
         let con_id = ConstructorId(try!(self.read_u32::<LittleEndian>()));
         T::deserialize_boxed(con_id, self)
@@ -35,7 +42,7 @@ impl<'a, R: Read> ReadContext<'a, R> {
     }
 }
 
-impl<'a, R: Read> Read for ReadContext<'a, R> {
+impl<R: Read> Read for ReadContext<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let result = self.stream.read(buf);
         if let Ok(len) = result {
@@ -45,7 +52,7 @@ impl<'a, R: Read> Read for ReadContext<'a, R> {
     }
 }
 
-impl<'a, R: Read> tl::ReadHelpers for ReadContext<'a, R> {
+impl<R: Read> tl::ReadHelpers for ReadContext<R> {
     fn align(&mut self, alignment: u8) -> tl::Result<()> {
         let stub = (self.position % alignment as u64) as usize;
         if stub != 0 {
@@ -57,7 +64,14 @@ impl<'a, R: Read> tl::ReadHelpers for ReadContext<'a, R> {
     }
 }
 
-impl<'a, W: Write> WriteContext<'a, W> {
+impl<W: Write> WriteContext<W> {
+    pub fn new(writer: W) -> Self {
+        WriteContext {
+            stream: writer,
+            position: 0,
+        }
+    }
+    
     pub fn write_boxed<T: tl::Type>(&mut self, value: &T) -> tl::Result<()> {
         let con_id = value.type_id().unwrap();
         try!(self.write_u32::<LittleEndian>(con_id.0));
@@ -78,7 +92,7 @@ impl<'a, W: Write> WriteContext<'a, W> {
     }
 }
 
-impl<'a, W: Write> Write for WriteContext<'a, W> {
+impl<W: Write> Write for WriteContext<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let result = self.stream.write(buf);
         if let Ok(len) = result {
@@ -92,7 +106,7 @@ impl<'a, W: Write> Write for WriteContext<'a, W> {
     }
 }
 
-impl<'a, W: Write> tl::WriteHelpers for WriteContext<'a, W> {
+impl<W: Write> tl::WriteHelpers for WriteContext<W> {
     fn pad(&mut self, alignment: u8) -> tl::Result<()> {
         let stub = (self.position % alignment as u64) as usize;
         if stub != 0 {
