@@ -8,7 +8,7 @@ pub struct Vector<T: Type> {
 	pub elements: Vec<T>,
 }
 
-pub struct SendVec<'a, T: Type + 'a> {
+pub struct SendSlice<'a, T: Type + 'a> {
     pub elements: &'a [T],
 }
 
@@ -38,12 +38,7 @@ impl<T: Type> Type for Vector<T> {
     }
     
     fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> tl::Result<()> {
-        assert!(self.elements.len() <= std::u32::MAX as usize);
-        try!(writer.write_u32::<LittleEndian>(self.elements.len() as u32));
-        for item in &self.elements {
-            try!(writer.write_generic(item));
-        }
-        Ok(())
+        SendSlice::from_elements(&self.elements).serialize(writer)
     }
     
     fn deserialize<R: Read>(reader: &mut ReadContext<R>) -> tl::Result<Self> {
@@ -64,15 +59,15 @@ impl<T: Type> Type for Vector<T> {
     }
 }
 
-impl<'a, T: Type + 'a> SendVec<'a, T> {
-    pub fn from_elements(elements: &'a [T]) -> SendVec<T> {
-        SendVec {
+impl<'a, T: Type + 'a> SendSlice<'a, T> {
+    pub fn from_elements(elements: &'a [T]) -> SendSlice<T> {
+        SendSlice {
             elements: elements,
         }
     }
 }
 
-impl<'a, T: Type + 'a> Type for SendVec<'a, T> {
+impl<'a, T: Type + 'a> Type for SendSlice<'a, T> {
     fn bare_type() -> bool {
         false
     }

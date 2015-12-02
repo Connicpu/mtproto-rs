@@ -2,6 +2,8 @@ use std::io::{Read, Write};
 use tl::{self, Type};
 use tl::parsing::{ConstructorId, ReadContext, WriteContext};
 
+pub mod auth;
+
 pub struct RpcContext<'a, R: Read + 'a, W: Write + 'a> {
 	reader: &'a mut ReadContext<'a, R>,
 	writer: &'a mut WriteContext<'a, W>,

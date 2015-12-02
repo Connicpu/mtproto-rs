@@ -7,7 +7,9 @@ pub use self::bool_type::Bool;
 #[doc(inline)]
 pub use self::true_type::True;
 #[doc(inline)]
-pub use self::vector::{Vector, SendVec};
+pub use self::vector::{Vector, SendSlice};
+#[doc(inline)]
+pub use self::string::{String, SendStr};
 
 pub mod error;
 pub mod parsing;
@@ -16,6 +18,7 @@ pub mod complex_types;
 mod bool_type;
 mod true_type;
 mod vector;
+mod string;
 
 pub trait Type: Sized {
     fn bare_type() -> bool;
