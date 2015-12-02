@@ -1,11 +1,17 @@
 pub mod error;
 pub mod auth;
 
-#[tl_complex(id)]
+#[derive(TLType)]
 pub enum InputPeer {
-    #[tl_id("7f3b18ea")] Empty,
-    #[tl_id("7da07ec9")] SelfPeer, // Self is a keyword
-    #[tl_id("1023dbe8")] Contact(i32),
-    #[tl_id("9b447325")] Foreign(i32, i64),
-    #[tl_id("179be863")] Chat(i32),
+    #[tl_id(_7f3b18ea)]
+    Empty,
+    #[tl_id(_7da07ec9)]
+    SelfPeer,
+    #[tl_id(_1023dbe8)]
+    Contact { user_id: i32 },
+    #[tl_id(_9b447325)]
+    Foreign { user_id: i32, access_hash: i64 },
+    #[tl_id(_179be863)]
+    Chat { chat_id: i32 },
 }
+

@@ -9,8 +9,8 @@ fn main() {
     tl_macros::register(&mut registry);
     
     let src = Path::new("src/tl/complex_types/mod.in.rs");
-    let dst = Path::new(&env::var("OUT_DIR").unwrap()).join("tl/complex_types/mod.rs");
+    let dst = Path::new(&env::var("OUT_DIR").unwrap()).join("complex_types.rs");
     
-    //registry.expand("tl_complex", &src, &dst).unwrap();
+    registry.expand("", &src, &dst).unwrap();
 }
 
