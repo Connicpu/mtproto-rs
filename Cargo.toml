@@ -2,6 +2,13 @@
 name = "mtproto"
 version = "0.1.0"
 authors = ["Connor Hilarides <connorcpu@live.com>"]
+build = "build.rs"
 
 [dependencies]
 byteorder = "0.4"
+
+[build-dependencies]
+syntex = "0.22"
+
+[build-dependencies.tl_macros]
+path = "tl_macros"

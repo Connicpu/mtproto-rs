@@ -1,0 +1,8 @@
+[package]
+name = "tl_macros"
+version = "0.1.0"
+authors = ["Connor Hilarides <connorcpu@live.com>"]
+
+[dependencies]
+syntex = "0.22"
+syntex_syntax = "0.22"
