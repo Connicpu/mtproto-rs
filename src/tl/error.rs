@@ -11,6 +11,7 @@ pub enum Error {
     UnknownType,
     PrimitiveAsPolymorphic,
     BoxedAsBare,
+    ReceivedSendType,
 }
 
 impl From<io::Error> for Error {

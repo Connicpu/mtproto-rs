@@ -1,23 +1,28 @@
-use std::any::Any;
+use std::io::{Read, Write};
 use tl::parsing::{ConstructorId, ReadContext, WriteContext};
 
 pub use self::error::{Error, Result};
 #[doc(inline)]
 pub use self::bool_type::Bool;
+#[doc(inline)]
+pub use self::true_type::True;
+#[doc(inline)]
+pub use self::vector::{Vector, SendVec};
 
-mod bool_type;
 pub mod error;
 pub mod parsing;
+pub mod complex_types;
 
-pub trait Polymorphic: Any {
-    fn type_id(&self) -> Option<ConstructorId>;
-    fn serialize(&self, writer: &mut WriteContext) -> Result<()>;
-}
+mod bool_type;
+mod true_type;
+mod vector;
 
-pub trait Type: Polymorphic + Sized {
+pub trait Type: Sized {
     fn bare_type() -> bool;
-    fn deserialize(reader: &mut ReadContext) -> Result<Self>;
-    fn deserialize_boxed(id: ConstructorId, &mut ReadContext) -> Result<Self>;
+    fn type_id(&self) -> Option<ConstructorId>;
+    fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> Result<()>;
+    fn deserialize<R: Read>(reader: &mut ReadContext<R>) -> Result<Self>;
+    fn deserialize_boxed<R: Read>(id: ConstructorId, reader: &mut ReadContext<R>) -> Result<Self>;
 }
 
 trait ReadHelpers {
@@ -30,29 +35,27 @@ trait WriteHelpers {
 
 macro_rules! impl_tl_primitive {
     ($ptype:ident, $read:ident, $write:ident) => {
-        impl Polymorphic for $ptype {
-            fn type_id(&self) -> Option<ConstructorId> {
-                None
-            }
-            
-            fn serialize(&self, writer: &mut WriteContext) -> Result<()> {
-                use byteorder::{LittleEndian, WriteBytesExt};
-                try!(writer.$write::<LittleEndian>(*self));
-                Ok(())
-            }
-        }
-        
         impl Type for $ptype {
             fn bare_type() -> bool {
                 true
             }
             
-            fn deserialize(reader: &mut ReadContext) -> Result<Self> {
+            fn type_id(&self) -> Option<ConstructorId> {
+                None
+            }
+            
+            fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> Result<()> {
+                use byteorder::{LittleEndian, WriteBytesExt};
+                try!(writer.$write::<LittleEndian>(*self));
+                Ok(())
+            }
+            
+            fn deserialize<R: Read>(reader: &mut ReadContext<R>) -> Result<Self> {
                 use byteorder::{LittleEndian, ReadBytesExt};
                 Ok(try!(reader.$read::<LittleEndian>()))
             }
             
-            fn deserialize_boxed(_: ConstructorId, _: &mut ReadContext) -> Result<Self> {
+            fn deserialize_boxed<R: Read>(_: ConstructorId, _: &mut ReadContext<R>) -> Result<Self> {
                 Err(Error::PrimitiveAsPolymorphic)
             }
         }

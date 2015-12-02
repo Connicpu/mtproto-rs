@@ -2,25 +2,20 @@ use std::io::{Read, Write};
 use tl::{self, Type};
 use tl::parsing::{ConstructorId, ReadContext, WriteContext};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Bool(pub bool);
+#[derive(Copy, Clone, Debug)]
+pub struct Null;
 
-impl Bool {
-    pub const TRUE: ConstructorId = ConstructorId(0xbc799737);
-    pub const FALSE: ConstructorId = ConstructorId(0x997275b5);
+impl Null {
+    pub const SIGNATURE: ConstructorId = ConstructorId(0x56730bcc);
 }
 
-impl Type for Bool {
+impl Type for Null {
     fn bare_type() -> bool {
         false
     }
     
     fn type_id(&self) -> Option<ConstructorId> {
-        if self.0 {
-            Some(Bool::TRUE)
-        } else {
-            Some(Bool::FALSE)
-        }
+        Some(Null::SIGNATURE)
     }
     
     fn serialize<W: Write>(&self, _: &mut WriteContext<W>) -> tl::Result<()> {
@@ -33,10 +28,8 @@ impl Type for Bool {
     
     fn deserialize_boxed<R: Read>(id: ConstructorId, _: &mut ReadContext<R>) -> tl::Result<Self> {
         match id {
-            Bool::TRUE => Ok(Bool(true)),
-            Bool::FALSE => Ok(Bool(false)),
+            Null::SIGNATURE => Ok(Null),
             _ => Err(tl::Error::InvalidData),
         }
     }
 }
-
