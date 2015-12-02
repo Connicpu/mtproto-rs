@@ -9,8 +9,6 @@ pub use self::bool_type::Bool;
 pub use self::true_type::True;
 #[doc(inline)]
 pub use self::vector::{Vector, SendSlice};
-#[doc(inline)]
-pub use self::string::{String, SendStr};
 
 pub mod error;
 pub mod parsing;
@@ -19,7 +17,6 @@ pub mod complex_types;
 mod bool_type;
 mod true_type;
 mod vector;
-mod string;
 
 pub trait Type: Sized {
     fn bare_type() -> bool;
@@ -140,5 +137,65 @@ impl<'a> Type for Vec<u8> {
     
     fn deserialize_boxed<R: Read>(_: ConstructorId, _: &mut ReadContext<R>) -> Result<Self> {
         Err(Error::PrimitiveAsPolymorphic)
+    }
+}
+
+impl<'a> Type for String {
+    fn bare_type() -> bool {
+        true
+    }
+    
+    fn type_id(&self) -> Option<ConstructorId> {
+        None
+    }
+    
+    fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> Result<()> {
+        (&self[..]).serialize(writer)
+    }
+    
+    fn deserialize<R: Read>(reader: &mut ReadContext<R>) -> Result<Self> {
+        let bytes = try!(reader.read_bare());
+        Ok(try!(String::from_utf8(bytes)))
+    }
+    
+    fn deserialize_boxed<R: Read>(_: ConstructorId, _: &mut ReadContext<R>) -> Result<Self> {
+        Err(Error::PrimitiveAsPolymorphic)
+    }
+}
+
+impl<'a> Type for &'a str {
+    fn bare_type() -> bool {
+        true
+    }
+    
+    fn type_id(&self) -> Option<ConstructorId> {
+        None
+    }
+    
+    fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> Result<()> {
+        try!(writer.write_bare(&self.as_bytes()));
+        Ok(())
+    }
+    
+    fn deserialize<R: Read>(_: &mut ReadContext<R>) -> Result<Self> {
+        Err(Error::ReceivedSendType)
+    }
+    
+    fn deserialize_boxed<R: Read>(_: ConstructorId, _: &mut ReadContext<R>) -> Result<Self> {
+        Err(Error::ReceivedSendType)
+    }
+}
+
+impl Type for bool {
+    fn bare_type() -> bool { Bool::bare_type() }
+    fn type_id(&self) -> Option<ConstructorId> { Bool(*self).type_id() }
+    fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> Result<()> {
+        Bool(*self).serialize(writer)
+    }
+    fn deserialize<R: Read>(reader: &mut ReadContext<R>) -> Result<Self> {
+        Ok(try!(Bool::deserialize(reader)).0)
+    }
+    fn deserialize_boxed<R: Read>(id: ConstructorId, reader: &mut ReadContext<R>) -> Result<Self> {
+        Ok(try!(Bool::deserialize_boxed(id, reader)).0)
     }
 }
