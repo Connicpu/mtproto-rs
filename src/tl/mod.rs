@@ -18,6 +18,9 @@ mod bool_type;
 mod true_type;
 mod vector;
 
+/// The API version we've implemented against
+pub const MTPROTO_LAYER: u32 = 23;
+
 pub trait Type: Sized {
     fn bare_type() -> bool;
     fn type_id(&self) -> Option<ConstructorId>;
