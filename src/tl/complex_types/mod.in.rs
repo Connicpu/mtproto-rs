@@ -2,6 +2,12 @@ use tl::Vector;
 
 pub mod auth;
 pub mod storage;
+pub mod contacts;
+pub mod messages;
+pub mod updates;
+pub mod photos;
+pub mod upload;
+pub mod help;
 
 #[derive(TLType)]
 #[tl_id(_c4b9f9bb)]
@@ -454,6 +460,117 @@ pub enum GeoPoint {
         long: f64,
         lat: f64,
     }
+}
+
+#[derive(TLType)]
+pub enum InputNotifyPeer {
+    #[tl_id(_b8bc5b0c)] Peer(Peer),
+    #[tl_id(_193b4417)] Users,
+    #[tl_id(_4a95e84e)] Chats,
+    #[tl_id(_a429b886)] All,
+}
+
+#[derive(TLType)]
+pub enum InputPeerNotifyEvents {
+    #[tl_id(_f03064d8)] Empty,
+    #[tl_id(_e86a2c74)] All,
+}
+
+#[derive(TLType)]
+#[tl_id(_46a2ce98)]
+pub struct InputPeerNotifySettings {
+    pub mute_until: i32,
+    pub sound: String,
+    pub show_previews: bool,
+    pub events_mask: i32,
+}
+
+#[derive(TLType)]
+pub enum PeerNotifyEvents {
+    #[tl_id(_add53cb3)] Empty,
+    #[tl_id(_6d1ded88)] All,
+}
+
+#[derive(TLType)]
+pub enum PeerNotifySettings {
+    #[tl_id(_70a68512)] Empty,
+    #[tl_id(_8d5e11ee)] Settings {
+        mute_until: i32,
+        sound: String,
+        show_previews: bool,
+        events_mask: i32,
+    },
+}
+
+#[derive(TLType)]
+pub enum WallPaper {
+    #[tl_id(_ccb03657)] Photo {
+        id: i32,
+        title: String,
+        sizes: Vector<PhotoSize>,
+        color: i32,
+    },
+    #[tl_id(_63117f24)] Solid {
+        id: i32,
+        title: String,
+        bg_color: i32,
+        color: i32,
+    },
+}
+
+#[derive(TLType)]
+pub enum ReportReason {
+    #[tl_id(_58dbcab8)] Spam,
+    #[tl_id(_1e22c78d)] Violence,
+    #[tl_id(_2e59d922)] Pornography,
+    #[tl_id(_e1746d0a)] Other(String),
+}
+
+#[derive(TLType)]
+#[tl_id(_771095da)]
+pub struct UserFull {
+    pub user: User,
+    pub link: contacts::Link,
+    pub profile_photo: Photo,
+    pub notify_settings: PeerNotifySettings,
+    pub blocked: bool,
+    pub real_first_name: String,
+    pub real_last_name: String,
+}
+
+#[derive(TLType)]
+#[tl_id(_f911c994)]
+pub struct Contact {
+    pub user_id: i32,
+    pub mutual: bool,
+}
+
+#[derive(TLType)]
+#[tl_id(_d0028438)]
+pub struct ImportedContact {
+    pub user_id: i32,
+    pub client_id: i64,
+}
+
+#[derive(TLType)]
+#[tl_id(_561bc879)]
+pub struct ContactBlocked {
+    pub user_id: i32,
+    pub date: i32,
+}
+
+#[derive(TLType)]
+#[tl_id(_3de191a1)]
+pub struct ContactSuggested {
+    pub user_id: i32,
+    pub mutual_contacts: i32,
+}
+
+#[derive(TLType)]
+#[tl_id(_d3680c61)]
+pub struct ContactStatus {
+    pub user_id: i32,
+    pub status: UserStatus,
 }
 
 // #[tl_id(_)] 
