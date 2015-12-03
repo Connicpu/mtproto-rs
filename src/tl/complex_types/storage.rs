@@ -11,3 +11,5 @@ pub enum FileType {
     #[tl_id(_b3cea0e4)] Mp4,
     #[tl_id(_1081464c)] Webp,
 }
+
+// #[tl_id(_)] 

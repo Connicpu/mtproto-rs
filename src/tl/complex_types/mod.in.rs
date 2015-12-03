@@ -4,10 +4,10 @@ pub mod auth;
 pub mod storage;
 pub mod contacts;
 pub mod messages;
-pub mod updates;
-pub mod photos;
-pub mod upload;
-pub mod help;
+//pub mod updates;
+//pub mod photos;
+//pub mod upload;
+//pub mod help;
 
 #[derive(TLType)]
 #[tl_id(_c4b9f9bb)]
