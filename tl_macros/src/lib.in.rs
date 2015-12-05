@@ -236,21 +236,47 @@ fn impl_item_struct(
             )
         }
         ast::VariantData::Tuple(ref fields, _) => {
+            let field_names: Vec<ast::Ident> = (0..fields.len())
+                .map(|i| builder.id(format!("__field{}", i)))
+                .collect();
+                
+            let read_ops = builder.expr().block().with_stmts(
+                field_names.iter()
+                .map(|field| {
+                    quote_stmt!(cx,
+                        let $field = try!(reader.read_generic())
+                    ).unwrap()
+                })
+            );
+            
             let pat = builder.expr().call()
                 .path().id(item.ident).build()
-                .with_args((0..fields.len()).map(|_| {
-                    quote_expr!(cx, try!(reader.read_generic()))
+                .with_args(field_names.iter().map(|field_name| {
+                    builder.expr().id(field_name)
                 }))
                 .build();
             
-            quote_expr!(cx,
+            read_ops.expr().build(quote_expr!(cx,
                 Ok($pat)
-            )
+            ))
         }
         ast::VariantData::Struct(ref fields, _) => {
+            let field_names: Vec<ast::Ident> = (0..fields.len())
+                .map(|i| builder.id(format!("__field{}", i)))
+                .collect();
+                
+            let read_ops = builder.expr().block().with_stmts(
+                field_names.iter()
+                .map(|field| {
+                    quote_stmt!(cx,
+                        let $field = try!(reader.read_generic())
+                    ).unwrap()
+                })
+            );
+                
             let pat = builder.expr().struct_()
                 .id(item.ident).build()
-                .with_id_exprs(fields.iter().map(|field| {
+                .with_id_exprs(fields.iter().zip(&field_names).map(|(field, field_name)| {
                     let name = match field.node.kind {
                         ast::NamedField(name, _) => name,
                         ast::UnnamedField(_) => {
@@ -258,13 +284,13 @@ fn impl_item_struct(
                         }
                     };
                     
-                    (name, quote_expr!(cx, try!(reader.read_generic())))
+                    (name, builder.expr().id(field_name))
                 }))
                 .build();
             
-            quote_expr!(cx,
+            read_ops.expr().build(quote_expr!(cx,
                 Ok($pat)
-            )
+            ))
         }
     };
     
@@ -562,23 +588,53 @@ fn impl_enum_deserialize_arm(
             )
         }
         ast::VariantData::Tuple(ref fields, _) => {
+            let field_names: Vec<ast::Ident> = (0..fields.len())
+                .map(|i| builder.id(format!("__field{}", i)))
+                .collect();
+                
+            let read_ops = builder.expr().block().with_stmts(
+                field_names.iter()
+                .map(|field| {
+                    quote_stmt!(cx,
+                        let $field = try!(reader.read_generic())
+                    ).unwrap()
+                })
+            );
+            
             let pat = builder.expr().call()
                 .path().id(type_ident).id(variant_ident).build()
-                .with_args((0..fields.len()).map(|_| {
-                    quote_expr!(cx, try!(reader.read_generic()))
+                .with_args(field_names.iter().map(|field_name| {
+                    builder.expr().id(field_name)
                 }))
                 .build();
+                
+            let result = read_ops.expr().build(quote_expr!(cx,
+                Ok($pat)
+            ));
             
             quote_arm!(cx,
                 $var_id => {
-                    Ok($pat)
+                    $result
                 }
             )
         }
         ast::VariantData::Struct(ref fields, _) => {
+            let field_names: Vec<ast::Ident> = (0..fields.len())
+                .map(|i| builder.id(format!("__field{}", i)))
+                .collect();
+                
+            let read_ops = builder.expr().block().with_stmts(
+                field_names.iter()
+                .map(|field| {
+                    quote_stmt!(cx,
+                        let $field = try!(reader.read_generic())
+                    ).unwrap()
+                })
+            );
+            
             let pat = builder.expr().struct_()
                 .id(type_ident).id(variant_ident).build()
-                .with_id_exprs(fields.iter().map(|field| {
+                .with_id_exprs(fields.iter().zip(&field_names).map(|(field, field_name)| {
                     let name = match field.node.kind {
                         ast::NamedField(name, _) => name,
                         ast::UnnamedField(_) => {
@@ -586,13 +642,17 @@ fn impl_enum_deserialize_arm(
                         }
                     };
                     
-                    (name, quote_expr!(cx, try!(reader.read_generic())))
+                    (name, builder.expr().id(field_name))
                 }))
                 .build();
+                
+            let result = read_ops.expr().build(quote_expr!(cx,
+                Ok($pat)
+            ));
             
             quote_arm!(cx,
                 $var_id => {
-                    Ok($pat)
+                    $result
                 }
             )
         }
