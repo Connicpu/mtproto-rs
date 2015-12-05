@@ -119,6 +119,7 @@ fn impl_body(
     
     quote_item!(
         cx,
+        #[allow(unused_variables)]
         impl ::tl::Type for $ty {
             fn bare_type() -> bool {
                 false

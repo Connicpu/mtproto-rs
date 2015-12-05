@@ -9,6 +9,4 @@ byteorder = "0.4"
 
 [build-dependencies]
 syntex = "0.22"
-
-[build-dependencies.tl_macros]
-path = "tl_macros"
+tl_macros = { path = "tl_macros" }

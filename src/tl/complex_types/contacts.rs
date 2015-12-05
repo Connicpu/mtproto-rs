@@ -64,4 +64,11 @@ pub struct Suggested {
     pub users: Vector<User>,
 }
 
+#[derive(TLType)]
+#[tl_id(_566000e)]
+pub struct Found {
+    pub results: Vector<ContactFound>,
+    pub users: Vector<User>,
+}
+
 // #[tl_id(_)] 

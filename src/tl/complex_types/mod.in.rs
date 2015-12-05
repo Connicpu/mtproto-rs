@@ -4,10 +4,11 @@ pub mod auth;
 pub mod storage;
 pub mod contacts;
 pub mod messages;
-//pub mod updates;
-//pub mod photos;
-//pub mod upload;
-//pub mod help;
+pub mod updates;
+pub mod photos;
+pub mod upload;
+pub mod help;
+pub mod account;
 
 #[derive(TLType)]
 #[tl_id(_c4b9f9bb)]
@@ -571,6 +572,458 @@ pub struct ContactSuggested {
 pub struct ContactStatus {
     pub user_id: i32,
     pub status: UserStatus,
+}
+
+#[derive(TLType)]
+pub enum MessagesFilter {
+    #[tl_id(_57e2f66c)] Empty,
+    #[tl_id(_9609a51c)] Photos,
+    #[tl_id(_9fc00e65)] Video,
+    #[tl_id(_56e9f0e4)] PhotoVideo,
+    #[tl_id(_d95e73bb)] PhotoVideoDocuments,
+    #[tl_id(_9eddf188)] Document,
+    #[tl_id(_cfc87522)] Audio,
+    #[tl_id(_5afbf764)] AudioDocuments,
+    #[tl_id(_7ef0dd87)] Url,
+}
+
+#[derive(TLType)]
+pub enum Update {
+    #[tl_id(_13abdb3)] NewMessage {
+        message: Message,
+        pts: i32 
+    },
+    #[tl_id(_4e90bfd6)] MessageId {
+        id: i32,
+        random_id: i64, 
+    },
+    #[tl_id(_c6649e31)] ReadMessages {
+        messages: Vector<i32>,
+        pts: i32, 
+    },
+    #[tl_id(_a92bfe26)] DeleteMessages {
+        messages: Vector<i32>,
+        pts: i32, 
+    },
+    #[tl_id(_5c486927)] UserTypings {
+        user_id: i32,
+        action: SendMessageAction,
+    },
+    #[tl_id(_9a65ea1f)] ChatUserTypings {
+        chat_id: i32,
+        user_id: i32,
+        action: SendMessageAction,
+    },
+    #[tl_id(_7761198)] ChatParticipants {
+        participants: ChatParticipants,
+    },
+    #[tl_id(_1bfbd823)] UserStatus {
+        user_id: i32,
+        status: UserStatus,
+    },
+    #[tl_id(_a7332b73)] UserName {
+        user_id: i32,
+        first_name: String,
+        last_name: String,
+        username: String, 
+    },
+    #[tl_id(_95313b0c)] UserPhoto {
+        user_id: i32,
+        date: i32,
+        photo: UserProfilePhoto,
+        previous: bool, 
+    },
+    #[tl_id(_2575bbb9)] ContactRegistered {
+        user_id: i32,
+        date: i32, 
+    },
+    #[tl_id(_51a48a9a)] ContactLink {
+        user_id: i32,
+        my_link: contacts::MyLink,
+        foreign_link: contacts::ForeignLink,
+    },
+    #[tl_id(_8f06529a)] NewAuthorization {
+        auth_key_id: i64,
+        date: i32,
+        device: String,
+        location: String,
+    },
+    #[tl_id(_12bcbd9a)] NewEncryptedMessage {
+        message: EncryptedMessage,
+        qts: i32,
+    },
+    #[tl_id(_1710f156)] EncryptedChatTypings {
+        chat_id: i32,
+    },
+    #[tl_id(_b4a2e88d)] Encryption {
+        chat: EncryptedChat,
+        date: i32,
+    },
+    #[tl_id(_38fe25b7)] EncryptedMessagesRead {
+        chat_id: i32,
+        max_date: i32,
+        date: i32,
+    },
+    #[tl_id(_3a0eeb22)] ChatParticipantAdd {
+        chat_id: i32,
+        user_id: i32,
+        inviter_id: i32,
+        version: i32,
+    },
+    #[tl_id(_6e5f8c22)] ChatParticipantDelete {
+        chat_id: i32,
+        user_id: i32,
+        version: i32,
+    },
+    #[tl_id(_8e5e9873)] DcOptions {
+        dc_options: Vector<DcOption>,
+    },
+    #[tl_id(_80ece81a)] UserBlocked {
+        user_id: i32,
+        blocked: bool,
+    },
+    #[tl_id(_bec268ef)] NotifySettings {
+        peer: NotifyPeer,
+        notify_settings: PeerNotifySettings,
+    },
+    #[tl_id(_382dd3e4)] ServiceNotification {
+        service_type: String,
+        message: String,
+        media: MessageMedia,
+        popup: bool,
+    },
+    #[tl_id(_ee3b272a)] Privacy {
+        key: PrivacyKey,
+        rules: Vector<PrivacyRule>,
+    },
+    #[tl_id(_12b9417b)] UserPhone {
+        user_id: i32,
+        phone: String,
+    },
+}
+
+#[derive(TLType)]
+pub enum Updates {
+    #[tl_id(_e317af7e)] TooLong,
+    #[tl_id(_d3f45784)] ShortMessage {
+        id: i32,
+        from_id: i32,
+        message: String,
+        pts: i32,
+        date: i32,
+        seq: i32,
+    },
+    #[tl_id(_2b2fbd4e)] ShortChatMessage {
+        id: i32,
+        from_id: i32,
+        chat_id: i32,
+        message: String,
+        pts: i32,
+        date: i32,
+        seq: i32,
+    },
+    #[tl_id(_78d4dec1)] Short {
+        update: Update,
+        date: i32,
+    },
+    #[tl_id(_725b04c3)] Combined {
+        updates: Vector<Update>,
+        users: Vector<User>,
+        chats: Vector<Chat>,
+        date: i32,
+        seq_start: i32,
+        seq: i32,
+    },
+    #[tl_id(_74ae4240)] Updates {
+        updates: Vector<Update>,
+        users: Vector<User>,
+        chats: Vector<Chat>,
+        date: i32,
+        seq: i32,
+    },
+}
+
+#[derive(TLType)]
+#[tl_id(_2ec2a43c)]
+pub struct DcOption {
+    pub id: i32,
+    pub hostname: String,
+    pub ip_address: String,
+    pub port: i32,
+}
+
+#[derive(TLType)]
+#[tl_id(_7dae33e0)]
+pub struct Config {
+    pub date: i32,
+    pub expires: i32,
+    pub test_mode: bool,
+    pub this_dc: i32,
+    pub dc_options: Vector<DcOption>,
+    pub chat_big_size: i32,
+    pub chat_size_max: i32,
+    pub broadcast_size_max: i32,
+    pub disabled_features: Vector<DisabledFeature>,
+}
+
+#[derive(TLType)]
+#[tl_id(_8e1a1775)]
+pub struct NearestDc {
+    pub country: String,
+    pub this_dc: i32,
+    pub nearest_dc: i32,
+}
+
+#[derive(TLType)]
+pub enum EncryptedChat {
+    #[tl_id(_ab7ec0a0)] Empty {
+        id: i32,
+    },
+    #[tl_id(_3bf703dc)] Waiting {
+        id: i32,
+        access_hash: i64,
+        date: i32,
+        admin_id: i32,
+        participant_id: i32,
+        
+    },
+    #[tl_id(_c878527e)] Requested {
+        id: i32,
+        access_hash: i64,
+        date: i32,
+        admin_id: i32,
+        participant_id: i32,
+        g_a: Vec<u8>,
+    },
+    #[tl_id(_fa56ce36)] Chat {
+        id: i32,
+        access_hash: i64,
+        date: i32,
+        admin_id: i32,
+        participant_id: i32,
+        g_a_or_b: Vec<u8>,
+        key_fingerprint: i64,
+    },
+    #[tl_id(_13d6dd27)] Discarded {
+        id: i32,
+    },
+}
+
+#[derive(TLType)]
+#[tl_id(_f141b5e1)]
+pub struct InputEncryptedChat {
+    pub chat_id: i32,
+    pub access_hash: i64,
+}
+
+#[derive(TLType)]
+pub enum EncryptedFile {
+    #[tl_id(_c21f497e)] Empty,
+    #[tl_id(_4a70994c)] File {
+        id: i64,
+        access_hash: i64,
+        size: i32,
+        dc_id: i32,
+        key_fingerprint: i32,
+    },
+}
+
+#[derive(TLType)]
+pub enum InputEncryptedFile {
+    #[tl_id(_1837c364)] Empty,
+    #[tl_id(_64bd0306)] Uploaded {
+        id: i64,
+        parts: i32,
+        md5_checksum: String,
+        key_fingerprint: i32,
+    },
+    #[tl_id(_5a17b5e5)] File {
+        id: i64,
+        access_hash: i64,
+    },
+    #[tl_id(_2dc173c8)] BigUploaded {
+        id: i64,
+        parts: i32,
+        key_fingerprint: i32,
+    },
+}
+
+#[derive(TLType)]
+pub enum EncryptedMessage {
+    #[tl_id(_ed18c118)] Message {
+        random_id: i64,
+        chat_id: i32,
+        date: i32,
+        bytes: Vec<u8>,
+        file: EncryptedFile,
+    },
+    #[tl_id(_23734b06)] Service {
+        random_id: i64,
+        chat_id: i32,
+        date: i32,
+        bytes: Vec<u8>,
+    },
+}
+
+#[derive(TLType)]
+pub enum InputAudio {
+    #[tl_id(_d95adc84)] Empty,
+    #[tl_id(_77d440ff)] Audio {
+        id: i64,
+        access_hash: i64,
+    },
+}
+
+#[derive(TLType)]
+pub enum InputDocument {
+    #[tl_id(_72f0eaae)] Empty,
+    #[tl_id(_18798952)] Document {
+        id: i64,
+        access_hash: i64,
+    },
+}
+
+#[derive(TLType)]
+pub enum Audio {
+    #[tl_id(_586988d8)] Empty {
+        id: i64,
+    },
+    #[tl_id(_c7ac6496)] Audio {
+        id: i64,
+        access_hash: i64,
+        user_id: i32,
+        date: i32,
+        duration: i32,
+        mime_type: String,
+        size: i32,
+        dc_id: i32,
+    },
+}
+
+#[derive(TLType)]
+pub enum Document {
+    #[tl_id(_36f8c871)] Empty {
+        id: i64,
+    },
+    #[tl_id(_f9a39f4f)] Document {
+        id: i64,
+        access_hash: i64,
+        date: i32,
+        mime_type: String,
+        size: i32,
+        thumb: PhotoSize,
+        dc_id: i32,
+        attributes: Vector<DocumentAttribute>,
+    },
+}
+
+#[derive(TLType)]
+pub enum NotifyPeer {
+    #[tl_id(_9fd40bd8)] Peer {
+        peer: Peer,
+    },
+    #[tl_id(_b4c83b4c)] Users,
+    #[tl_id(_c007cec3)] Chats,
+    #[tl_id(_74d07c60)] All,
+}
+
+#[derive(TLType)]
+pub enum SendMessageAction {
+    #[tl_id(_16bf744e)] Typing,
+    #[tl_id(_fd5ec8f5)] Cancel,
+    #[tl_id(_a187d66f)] RecordVideo,
+    #[tl_id(_92042ff7)] UploadVideo,
+    #[tl_id(_d52f73f7)] RecordAudio,
+    #[tl_id(_e6ac8a6f)] UploadAudio,
+    #[tl_id(_990a3c1a)] UploadPhoto,
+    #[tl_id(_8faee98e)] UploadDocument,
+    #[tl_id(_176f8ba1)] GeoLocation,
+    #[tl_id(_628cbc6f)] ChooseContact,
+}
+
+#[derive(TLType)]
+#[tl_id(_ea879f95)]
+pub struct ContactFound {
+    pub user_id: i32,
+}
+
+#[derive(TLType)]
+pub enum InputPrivacyKey {
+    #[tl_id(_4f96cb18)] StatusTimestamp,
+}
+
+#[derive(TLType)]
+pub enum PrivacyKey {
+    #[tl_id(_bc2eab30)] StatusTimestamp,
+}
+
+#[derive(TLType)]
+pub enum InputPrivacyRule {
+    #[tl_id(_d09e07b)] AllowContacts,
+    #[tl_id(_184b35ce)] AllowAll,
+    #[tl_id(_131cc67f)] AllowUsers {
+        users: Vector<InputUser>,
+    },
+    #[tl_id(_ba52007)] DisallowContacts,
+    #[tl_id(_d66b66c9)] DisallowAll,
+    #[tl_id(_90110467)] DisallowUsers {
+        users: Vector<InputUser>,
+    },
+}
+
+#[derive(TLType)]
+pub enum PrivacyRule {
+    #[tl_id(_fffe1bac)] AllowContacts,
+    #[tl_id(_65427b82)] AllowAll,
+    #[tl_id(_4d5bbe0c)] AllowUsers {
+        users: Vector<i32>,
+    },
+    #[tl_id(_f888fa1a)] DisallowContacts,
+    #[tl_id(_8b73e763)] DisallowAll,
+    #[tl_id(_c7f49b7)] DisallowUsers {
+        users: Vector<i32>,
+    },
+}
+
+#[derive(TLType)]
+#[tl_id(_554abb6f)]
+pub struct PrivacyRules {
+    pub rules: Vector<PrivacyRule>,
+    pub users: Vector<User>,
+}
+
+#[derive(TLType)]
+#[tl_id(_b8d0afdf)]
+pub struct AccountDaysTTL {
+    pub days: i32,
+}
+
+#[derive(TLType)]
+pub enum DocumentAttribute {
+    #[tl_id(_6c37c15c)] ImageSize {
+        w: i32,
+        h: i32,
+    },
+    #[tl_id(_11b58939)] Animated,
+    #[tl_id(_fb0a5727)] Sticker,
+    #[tl_id(_5910cccb)] Video {
+        duration: i32,
+        w: i32,
+        h: i32,
+    },
+    #[tl_id(_51448e5)] Audio {
+        duration: i32,
+    },
+    #[tl_id(_15590068)] Filename {
+        file_name: String,
+    },
+}
+
+#[derive(TLType)]
+#[tl_id(_ae636f24)]
+pub struct DisabledFeature {
+    pub feature: String,
+    pub description: String,
 }
 
 // #[tl_id(_)] 
