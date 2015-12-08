@@ -14,18 +14,18 @@ impl Session {
         let nano = time.nanosecond();
         
         let nano_bits = (nano >> 14) as u16 & 0xFFFC;
-        let id = if nano_bits == self.message_id_last_nano {
-            let id = self.message_id_seq;
+        // For the highly unlikely case that the nanosecond is the same
+        if nano_bits == self.message_id_last_nano {
             self.message_id_seq += 1;
-            id
         } else {
-            self.message_id_seq = 0;
-            0
-        };
+            self.message_id_last_nano = nano_bits;
+            self.message_id_seq = 0b0101010101010101; // too many zeroes = ignored, so
+        }
+        let id = self.message_id_seq;
         
         // [ lower 32-bits of unix time | bits 13..30 of the nanosecond (14 total) | id | 0b00 ]
         ((timestamp as u64) << 32) |
-        ((nano_bits as u64) << 16)
+        ((nano_bits as u64) << 16) |
         ((id as u64) << 2)
     }
 }
