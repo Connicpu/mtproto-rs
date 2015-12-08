@@ -8,6 +8,15 @@ pub struct Session {
 }
 
 impl Session {
+    pub fn new() -> Session {
+        Session {
+            session_id: 0,
+            server_salt: 0,
+            message_id_seq: 0,
+            message_id_last_nano: 0,
+        }
+    }
+    
     pub fn next_message_id(&mut self) -> u64 {
         let time = UTC::now();
         let timestamp = time.timestamp();
