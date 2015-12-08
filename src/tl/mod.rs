@@ -8,14 +8,18 @@ pub use self::bool_type::Bool;
 #[doc(inline)]
 pub use self::true_type::True;
 #[doc(inline)]
+pub use self::null_type::Null;
+#[doc(inline)]
 pub use self::vector::{Vector, SendSlice};
 
 pub mod error;
 pub mod parsing;
 pub mod complex_types;
+pub mod dynamic;
 
 mod bool_type;
 mod true_type;
+mod null_type;
 mod vector;
 
 /// The API version we've implemented against

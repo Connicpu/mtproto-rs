@@ -1026,4 +1026,183 @@ pub struct DisabledFeature {
     pub description: String,
 }
 
+// End-to-end encryption types
+
+#[derive(TLType)]
+pub enum DecryptedMessage {
+    // ==Layer 8==
+    #[tl_id(_1f814f1f)] Message_v8 {
+        random_id: i64,
+        random_bytes: Vec<u8>,
+        message: String,
+        media: DecryptedMessageMedia,
+    },
+    #[tl_id(_aa48327d)] Service_v8 {
+        random_id: i64,
+        random_bytes: Vec<u8>,
+        action: DecryptedMessageAction,
+    },
+    
+    // ==Layer 17==
+    #[tl_id(_204d3878)] Message_v17 {
+        random_id: i64,
+        ttl: i32,
+        message: String,
+        media: DecryptedMessageMedia,
+    },
+    #[tl_id(_73164160)] Service_v17 {
+        random_id: i64,
+        action: DecryptedMessageAction,
+    },
+}
+
+#[derive(TLType)]
+pub enum DecryptedMessageMedia {
+    // ==Layer 8==
+    #[tl_id(_89f5c4a)] Empty_v8,
+    #[tl_id(_32798a8c)] Photo_v8 {
+        thumb: Vec<u8>,
+        thumb_w: i32,
+        thumb_h: i32,
+        w: i32,
+        h: i32,
+        size: i32,
+        key: Vec<u8>,
+        iv: Vec<u8>,
+    },
+    #[tl_id(_4cee6ef3)] Video_v8 {
+        thumb: Vec<u8>,
+        thumb_w: i32,
+        thumb_h: i32,
+        duration: i32,
+        w: i32,
+        h: i32,
+        size: i32,
+        key: Vec<u8>,
+        iv: Vec<u8>,
+    },
+    #[tl_id(_35480a59)] GeoPoint_v8 {
+        lat: f64,
+        long: f64,
+    },
+    #[tl_id(_588a0a97)] Contact_v8 {
+        phone_number: String,
+        first_name: String,
+        last_name: String,
+        user_id: i32,
+    },
+    #[tl_id(_b095434b)] Document_v8 {
+        thumb: Vec<u8>,
+        thumb_w: i32,
+        thumb_h: i32,
+        file_name: String,
+        mime_type: String,
+        size: i32,
+        key: Vec<u8>,
+        iv: Vec<u8>,
+    },
+    #[tl_id(_6080758f)] Audio_v8 {
+        duration: i32,
+        size: i32,
+        key: Vec<u8>,
+        iv: Vec<u8>,
+    },
+    
+    // ==Layer 17==
+    #[tl_id(_524a415d)] Video_v17 {
+        thumb: Vec<u8>,
+        thumb_w: i32,
+        thumb_h: i32,
+        duration: i32,
+        mime_type: String,
+        w: i32,
+        h: i32,
+        size: i32,
+        key: Vec<u8>,
+        iv: Vec<u8>,
+    },
+    #[tl_id(_57e0a9cb)] Audio_v17 {
+        duration: i32,
+        mime_type: String,
+        w: i32,
+        h: i32,
+        size: i32,
+        key: Vec<u8>,
+        iv: Vec<u8>,
+    },
+    
+    // ==Layer 23==
+    #[tl_id(_fa95b0dd)] ExternalDocument_v23 {
+        id: i64,
+        access_hash: i64,
+        date: i32,
+        mime_type: String,
+        size: i32,
+        thumb: PhotoSize,
+        dc_id: i32,
+        attributes: Vector<DocumentAttribute>,
+    },
+}
+
+#[derive(TLType)]
+pub enum DecryptedMessageAction {
+    // ==Layer 8==
+    #[tl_id(_a1733aec)] SetMessageTTL_v8 {
+        ttl_seconds: i32,
+    },
+    #[tl_id(_c4f40be)] ReadMessages_v8 {
+        random_ids: Vector<i64>,
+    },
+    #[tl_id(_65614304)] DeleteMessages_v8 {
+        random_ids: Vector<i64>,
+    },
+    #[tl_id(_8ac1f475)] ScreenshotMessages_v8 {
+        random_ids: Vector<i64>,
+    },
+    #[tl_id(_6719e45c)] FlushHistory_v8,
+    
+    // ==Layer 17==
+    #[tl_id(_511110b0)] Resend_v17 {
+        start_seq_no: i32,
+        end_seq_no: i32,
+    },
+    #[tl_id(_f3048883)] NotifyLayer_v17 {
+        layer: i32,
+    },
+    #[tl_id(_ccb27641)] Typing_v17 {
+        action: SendMessageAction,
+    },
+    
+    // ==Layer 20==
+    #[tl_id(_f3c9611b)] RequestKey_v20 {
+        exchange_id: i64,
+        g_a: Vec<u8>,
+    },
+    #[tl_id(_6fe1735b)] AcceptKey_v20 {
+        exchange_id: i64,
+        g_b: Vec<u8>,
+        key_fingerprint: i64,
+    },
+    #[tl_id(_dd05ec6b)] AbortKey_v20 {
+        exchange_id: i64,
+    },
+    #[tl_id(_ec2e0b9b)] CommitKey_v20 {
+        exchange_id: i64,
+        key_fingerprint: i64,
+    },
+    #[tl_id(_a82fdd63)] Noop_v20,
+}
+
+#[derive(TLType)]
+pub enum DecryptedMessageLayer {
+    // ==Layer 17==
+    #[tl_id(_1be31789)] Layer_v17 {
+        random_bytes: Vec<u8>,
+        layer: i32,
+        in_seq_no: i32,
+        out_seq_no: i32,
+        message: DecryptedMessage,
+    }
+}
+
 // #[tl_id(_)] 

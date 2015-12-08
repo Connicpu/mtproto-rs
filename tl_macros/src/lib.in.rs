@@ -79,14 +79,15 @@ impl MultiItemDecorator for ComplexExpander {
         let builder = aster::AstBuilder::new().span(span);
         let ty = builder.ty().path().segment(item.ident).build().build();
         
-        let body = impl_body(
+        let (impltype, impldynamic) = impl_body(
             cx,
             &builder,
             &item,
             ty
         );
         
-        push(Annotatable::Item(body));
+        push(Annotatable::Item(impltype));
+        push(Annotatable::Item(impldynamic));
     }
 }
 
@@ -95,14 +96,15 @@ fn impl_body(
     builder: &aster::AstBuilder,
     item: &Item,
     ty: P<ast::Ty>
-) -> P<ast::Item> {
-    let (type_id, serialize, deserialize, deserialize_box) = match item.node {
+) -> (P<ast::Item>, P<ast::Item>) {
+    let (type_id, serialize, deserialize, deserialize_box, ctors) = match item.node {
         ast::ItemStruct(ref variant_data, _) => {
             impl_item_struct(
                 cx,
                 builder,
                 item,
-                variant_data
+                variant_data,
+                ty.clone()
             )
         }
         ast::ItemEnum(ref enum_def, _) => {
@@ -110,15 +112,15 @@ fn impl_body(
                 cx,
                 builder,
                 item.ident,
-                enum_def
+                enum_def,
+                ty.clone()
             )
         }
         _ => cx.bug("expected ItemStruct or ItemEnum in #[derive(TLType)]")
     };
     
     
-    quote_item!(
-        cx,
+    let impltype = quote_item!(cx,
         #[allow(unused_variables)]
         impl ::tl::Type for $ty {
             fn bare_type() -> bool {
@@ -149,15 +151,26 @@ fn impl_body(
                 $deserialize_box
             }
         }
-    ).unwrap()
+    ).unwrap();
+    
+    let impldynamic = quote_item!(cx,
+        impl ::tl::dynamic::TLDynamic for $ty {
+            fn register_ctors(cstore: &mut ::tl::dynamic::ClassStore) {
+                $ctors
+            }
+        }
+    ).unwrap();
+    
+    (impltype, impldynamic)
 }
 
 fn impl_item_struct(
     cx: &mut ExtCtxt,
     builder: &aster::AstBuilder,
     item: &Item,
-    variant_data: &ast::VariantData
-) -> (P<ast::Expr>, P<ast::Expr>, P<ast::Expr>, P<ast::Expr>) {
+    variant_data: &ast::VariantData,
+    ty: P<ast::Ty>
+) -> (P<ast::Expr>, P<ast::Expr>, P<ast::Expr>, P<ast::Expr>, P<ast::Block>) {
     let tid_path = builder.expr().path().id(item.ident).id("TYPE_ID").build();
     let type_id = quote_expr!(cx,
         Some($tid_path)
@@ -302,15 +315,26 @@ fn impl_item_struct(
         }
     });
     
-    (type_id, serialize, deserialize, deserialize_box)
+    let ctors = quote_block!(cx, {
+        fn do_deser(id: ::tl::parsing::ConstructorId, reader: &mut ::tl::parsing::ReadContext<&mut ::std::io::Read>) -> ::tl::Result<Box<::tl::dynamic::TLObject>> {
+            match <$ty as ::tl::Type>::deserialize_boxed(id, reader) {
+                Ok(o) => Ok(Box::new(o)),
+                Err(e) => Err(e),
+            }
+        }
+        cstore.add_ctor($tid_path, do_deser);
+    }).unwrap();
+    
+    (type_id, serialize, deserialize, deserialize_box, ctors)
 }
 
 fn impl_item_enum(
     cx: &mut ExtCtxt,
     builder: &aster::AstBuilder,
     type_ident: ast::Ident,
-    enum_def: &ast::EnumDef
-) -> (P<ast::Expr>, P<ast::Expr>, P<ast::Expr>, P<ast::Expr>) {
+    enum_def: &ast::EnumDef,
+    ty: P<ast::Ty>
+) -> (P<ast::Expr>, P<ast::Expr>, P<ast::Expr>, P<ast::Expr>, P<ast::Block>) {
     let type_id = impl_enum_type_id(
         cx,
         builder,
@@ -337,7 +361,34 @@ fn impl_item_enum(
         enum_def
     );
     
-    (type_id, serialize, deserialize, deserialize_box)
+    let ctor_adds = builder.block().with_stmts(enum_def.variants.iter()
+        .map(|variant| {
+            let var_id = variant.node.attrs.iter().filter_map(|attr| {
+                if let ast::MetaList(ref n, ref list) = attr.node.value.node {
+                    if &**n == "tl_id" {
+                        if let ast::MetaWord(ref n) = list[0].node {
+                            let id = u32::from_str_radix(&(**n)[1..], 16).unwrap();
+                            return Some(id);
+                        }
+                    }
+                }
+                None
+            }).next().unwrap();
+            quote_stmt!(cx, cstore.add_ctor(::tl::parsing::ConstructorId($var_id), do_deser)).unwrap()
+        }))
+        .build();
+    
+    let ctors = quote_block!(cx, {
+        fn do_deser(id: ::tl::parsing::ConstructorId, reader: &mut ::tl::parsing::ReadContext<&mut ::std::io::Read>) -> ::tl::Result<Box<::tl::dynamic::TLObject>> {
+            match <$ty as ::tl::Type>::deserialize_boxed(id, reader) {
+                Ok(o) => Ok(Box::new(o)),
+                Err(e) => Err(e),
+            }
+        }
+        $ctor_adds
+    }).unwrap();
+    
+    (type_id, serialize, deserialize, deserialize_box, ctors)
 }
 
 fn impl_enum_type_id(

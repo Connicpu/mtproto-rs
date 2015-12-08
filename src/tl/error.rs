@@ -13,6 +13,7 @@ pub enum Error {
     PrimitiveAsPolymorphic,
     BoxedAsBare,
     ReceivedSendType,
+    UnsupportedLayer,
 }
 
 impl From<io::Error> for Error {

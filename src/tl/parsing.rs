@@ -5,6 +5,8 @@ use tl;
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ConstructorId(pub u32);
 
+pub struct ContextTell(u64);
+
 pub struct ReadContext<R: Read> {
     stream: R,
     position: u64,
@@ -39,6 +41,23 @@ impl<R: Read> ReadContext<R> {
         } else {
             self.read_boxed()
         }
+    }
+    
+    pub fn borrow_polymorphic(&mut self) -> ReadContext<&mut Read> {
+        ReadContext {
+            stream: &mut self.stream as &mut Read,
+            position: self.position,
+        }
+    }
+    
+    pub fn integrate_polymorphic(&mut self, result: ContextTell) {
+        self.position = result.0;
+    }
+}
+
+impl<'a> ReadContext<&'a mut Read> {
+    pub fn end_polymorphic(self) -> ContextTell {
+        ContextTell(self.position)
     }
 }
 
@@ -89,6 +108,23 @@ impl<W: Write> WriteContext<W> {
         } else {
             self.write_boxed(value)
         }
+    }
+    
+    pub fn borrow_polymorphic(&mut self) -> WriteContext<&mut Write> {
+        WriteContext {
+            stream: &mut self.stream as &mut Write,
+            position: self.position,
+        }
+    }
+    
+    pub fn integrate_polymorphic(&mut self, result: ContextTell) {
+        self.position = result.0;
+    }
+}
+
+impl<'a> WriteContext<&'a mut Write> {
+    pub fn end_polymorphic(self) -> ContextTell {
+        ContextTell(self.position)
     }
 }
 
