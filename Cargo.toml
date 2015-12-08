@@ -6,6 +6,7 @@ build = "build.rs"
 
 [dependencies]
 byteorder = "0.4"
+chrono = "0.2"
 
 [build-dependencies]
 syntex = "0.22"

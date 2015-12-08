@@ -71,7 +71,10 @@ macro_rules! impl_tl_primitive {
 }
 
 impl_tl_primitive! { i32, read_i32, write_i32 }
+impl_tl_primitive! { u32, read_u32, write_u32 }
 impl_tl_primitive! { i64, read_i64, write_i64 }
+impl_tl_primitive! { u64, read_u64, write_u64 }
+impl_tl_primitive! { f32, read_f32, write_f32 }
 impl_tl_primitive! { f64, read_f64, write_f64 }
 
 impl<'a> Type for &'a [u8] {
