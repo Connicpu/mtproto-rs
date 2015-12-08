@@ -1,4 +1,4 @@
-use super::*;
+use super::{Result, Type};
 use std::io::{Read, Write};
 use std::any::Any;
 use std::collections::HashMap;
@@ -51,6 +51,11 @@ impl ClassStore {
         use tl::Null;
         let mut store = ClassStore { ctors: HashMap::new() };
         
+        Error::register_ctors(&mut store);
+        DecryptedMessage::register_ctors(&mut store);
+        Config::register_ctors(&mut store);
+        DecryptedMessageLayer::register_ctors(&mut store);
+        Message::register_ctors(&mut store);
         Null::register_ctors(&mut store);
         Updates::register_ctors(&mut store);
         Video::register_ctors(&mut store);
@@ -70,7 +75,7 @@ impl ClassStore {
         let id = try!(reader.read_bare());
         let ctor = match self.ctors.get(&id) {
             Some(ctor) => ctor,
-            None => return Err(Error::UnknownType)
+            None => return Err(super::Error::UnknownType)
         };
         
         let (result, state) = {
