@@ -123,10 +123,12 @@ fn impl_body(
     let impltype = quote_item!(cx,
         #[allow(unused_variables)]
         impl ::tl::Type for $ty {
+            #[inline]
             fn bare_type() -> bool {
                 false
             }
             
+            #[inline]
             fn type_id(&self) -> Option<::tl::parsing::ConstructorId> {
                 $type_id
             }

@@ -1,3 +1,4 @@
+use std;
 use std::io::{Read, Write};
 use tl::parsing::{ConstructorId, ReadContext, WriteContext};
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -77,11 +78,78 @@ impl_tl_primitive! { u64, read_u64, write_u64 }
 impl_tl_primitive! { f32, read_f32, write_f32 }
 impl_tl_primitive! { f64, read_f64, write_f64 }
 
+const VEC_TYPE_ID: ConstructorId = ConstructorId(0x1cb5c415);
+
+impl<'a, T: Type> Type for &'a [T] {
+    #[inline]
+    fn bare_type() -> bool {
+        false
+    }
+    
+    #[inline]
+    fn type_id(&self) -> Option<ConstructorId> {
+        Some(VEC_TYPE_ID)
+    }
+    
+    fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> Result<()> {
+        assert!(self.len() <= std::u32::MAX as usize);
+        try!(writer.write_u32::<LittleEndian>(self.len() as u32));
+        for item in *self {
+            try!(writer.write_generic(item));
+        }
+        Ok(())
+    }
+    
+    fn deserialize<R: Read>(_: &mut ReadContext<R>) -> Result<Self> {
+        Err(Error::ReceivedSendType)
+    }
+    
+    fn deserialize_boxed<R: Read>(_: ConstructorId, _: &mut ReadContext<R>) -> Result<Self> {
+        Err(Error::ReceivedSendType)
+    }
+}
+
+impl<T: Type> Type for Vec<T> {
+    #[inline]
+    fn bare_type() -> bool {
+        false
+    }
+    
+    #[inline]
+    fn type_id(&self) -> Option<ConstructorId> {
+        Some(VEC_TYPE_ID)
+    }
+    
+    fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> Result<()> {
+        (&self[..]).serialize(writer)
+    }
+    
+    fn deserialize<R: Read>(reader: &mut ReadContext<R>) -> Result<Self> {
+        let mut vec = vec![];
+        let count = try!(reader.read_u32::<LittleEndian>()) as usize;
+        vec.reserve(count);
+        for _ in 0..count {
+            vec.push(try!(reader.read_generic()));
+        }
+        Ok(vec)
+    }
+    
+    fn deserialize_boxed<R: Read>(id: ConstructorId, reader: &mut ReadContext<R>) -> Result<Self> {
+        if id != VEC_TYPE_ID {
+            return Err(Error::InvalidData);
+        }
+        
+        Vec::deserialize(reader)
+    }
+}
+
 impl<'a> Type for &'a [u8] {
+    #[inline]
     fn bare_type() -> bool {
         true
     }
     
+    #[inline]
     fn type_id(&self) -> Option<ConstructorId> {
         None
     }
@@ -115,11 +183,13 @@ impl<'a> Type for &'a [u8] {
     }
 }
 
-impl<'a> Type for Vec<u8> {
+impl Type for Vec<u8> {
+    #[inline]
     fn bare_type() -> bool {
         true
     }
     
+    #[inline]
     fn type_id(&self) -> Option<ConstructorId> {
         None
     }
@@ -150,11 +220,13 @@ impl<'a> Type for Vec<u8> {
     }
 }
 
-impl<'a> Type for String {
+impl Type for String {
+    #[inline]
     fn bare_type() -> bool {
         true
     }
     
+    #[inline]
     fn type_id(&self) -> Option<ConstructorId> {
         None
     }
@@ -174,10 +246,12 @@ impl<'a> Type for String {
 }
 
 impl<'a> Type for &'a str {
+    #[inline]
     fn bare_type() -> bool {
         true
     }
     
+    #[inline]
     fn type_id(&self) -> Option<ConstructorId> {
         None
     }
@@ -197,14 +271,24 @@ impl<'a> Type for &'a str {
 }
 
 impl Type for bool {
-    fn bare_type() -> bool { Bool::bare_type() }
-    fn type_id(&self) -> Option<ConstructorId> { Bool(*self).type_id() }
+    #[inline]
+    fn bare_type() -> bool {
+        Bool::bare_type()
+    }
+    
+    #[inline]
+    fn type_id(&self) -> Option<ConstructorId> {
+        Bool(*self).type_id()
+    }
+    
     fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> Result<()> {
         Bool(*self).serialize(writer)
     }
+    
     fn deserialize<R: Read>(reader: &mut ReadContext<R>) -> Result<Self> {
         Ok(try!(Bool::deserialize(reader)).0)
     }
+    
     fn deserialize_boxed<R: Read>(id: ConstructorId, reader: &mut ReadContext<R>) -> Result<Self> {
         Ok(try!(Bool::deserialize_boxed(id, reader)).0)
     }

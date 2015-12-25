@@ -1,20 +1,48 @@
 use chrono::{UTC, Timelike};
 
+pub mod encryption;
+
 pub struct Session {
     session_id: u64,
     server_salt: u64,
     message_id_seq: u16,
     message_id_last_nano: u16,
+    seq_no: u32,
+    auth_key: [u8; 256],
 }
 
 impl Session {
-    pub fn new() -> Session {
+    pub fn new(authorization_key: &[u8; 256]) -> Session {
         Session {
             session_id: 0,
             server_salt: 0,
             message_id_seq: 0,
             message_id_last_nano: 0,
+            seq_no: 0,
+            auth_key: *authorization_key,
         }
+    }
+    
+    pub fn get_session_id(&self) -> u64 {
+        self.session_id
+    }
+    
+    pub fn get_salt(&self) -> u64 {
+        self.server_salt
+    }
+    
+    pub fn next_seq_no(&self) -> u32 {
+        self.seq_no * 2
+    }
+    
+    pub fn next_content_seq_no(&mut self) -> u32 {
+        let seq = self.seq_no * 2;
+        self.seq_no += 1;
+        seq
+    }
+    
+    pub fn get_authorization_key(&self) -> &[u8; 256] {
+        &self.auth_key
     }
     
     pub fn next_message_id(&mut self) -> u64 {
@@ -32,7 +60,7 @@ impl Session {
         }
         let id = self.message_id_seq;
         
-        // [ lower 32-bits of unix time | bits 13..30 of the nanosecond (14 total) | id | 0b00 ]
+        // [ lower 32-bits of unix time | bits 13..30 of the nanosecond (14 total) | id (16 total) | 0b00 ]
         ((timestamp as u64) << 32) |
         ((nano_bits as u64) << 16) |
         ((id as u64) << 2)
