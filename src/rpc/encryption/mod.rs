@@ -4,8 +4,7 @@ use std::io::{Write, Cursor};
 use crypto::digest::Digest;
 use crypto::sha1::Sha1;
 use byteorder::{ByteOrder, LittleEndian};
-use crypto::{symmetriccipher, buffer, aes, blockmodes};
-use crypto::buffer::{ReadBuffer, WriteBuffer, BufferResult};
+use crypto::{symmetriccipher};
 
 pub mod ige;
 

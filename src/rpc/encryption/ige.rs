@@ -1,8 +1,5 @@
 use std::mem;
-use crypto::{buffer, aes, blockmodes};
-use crypto::aes::KeySize::*;
-use crypto::symmetriccipher::{Encryptor, Decryptor, BlockEncryptor, SymmetricCipherError};
-use crypto::buffer::{ReadBuffer, WriteBuffer, BufferResult, RefReadBuffer, RefWriteBuffer};
+use crypto::symmetriccipher::{BlockEncryptor, BlockDecryptor};
 
 const BLOCK_SIZE: usize = 16;
 
@@ -12,6 +9,10 @@ struct AesBlock {
 }
 
 impl AesBlock {
+    fn uninitialized() -> AesBlock {
+        unsafe { mem::uninitialized() }
+    }
+    
     fn from_bytes(data: &[u8]) -> AesBlock {
         *AesBlock::from_ref(data)
     }
@@ -24,11 +25,6 @@ impl AesBlock {
         unsafe { mem::transmute(&mut data[0]) }
     }
     
-    fn copy_to(&self, data: &mut [u8]) {
-        let temp: &[u8; BLOCK_SIZE] = unsafe { mem::transmute(&self.data) };
-        data.clone_from_slice(temp);
-    }
-    
     fn as_bytes(&self) -> &[u8] {
         let temp: &[u8; BLOCK_SIZE] = unsafe { mem::transmute(&self.data) };
         temp
@@ -39,11 +35,6 @@ impl AesBlock {
 struct IvBlock {
     iv1: AesBlock,
     iv2: AesBlock,
-}
-
-pub struct AesIge<T: BlockEncryptor> {
-    aes: T,
-    iv: IvBlock,
 }
 
 fn ige_enc_before(input: &[u8], output: &mut [u8], iv: &IvBlock) {
@@ -67,10 +58,35 @@ fn ige_enc_after(input: &[u8], output: &mut [u8], iv: &mut IvBlock) {
     iv.iv2 = *inp;
 }
 
-impl<T: BlockEncryptor> AesIge<T> {
+fn ige_dec_before(input: &[u8], temp: &mut AesBlock, iv: &IvBlock) {
+    let inp = AesBlock::from_ref(input);
+    
+    for (iv, (i, t)) in iv.iv2.data.iter().zip(inp.data.iter().zip(temp.data.iter_mut())) {
+        *t = *i ^ *iv;
+    }
+}
+
+fn ige_dec_after(input: &[u8], output: &mut [u8], iv: &mut IvBlock) {
+    let inp = AesBlock::from_ref(input);
+    let outp = AesBlock::from_ref_mut(output);
+    
+    for (iv, o) in iv.iv1.data.iter().zip(outp.data.iter_mut()) {
+        *o ^= *iv;
+    }
+    
+    iv.iv1 = *inp;
+    iv.iv2 = *outp;
+}
+
+pub struct IgeEncryptor<T: BlockEncryptor> {
+    aes: T,
+    iv: IvBlock,
+}
+
+impl<T: BlockEncryptor> IgeEncryptor<T> {
     pub fn new(aes: T, iv: &[u8]) -> Self {
         assert!(aes.block_size() == BLOCK_SIZE);
-        let mut ige = AesIge {
+        let mut ige = IgeEncryptor {
             aes: aes,
             iv: unsafe { mem::uninitialized() },
         };
@@ -79,9 +95,6 @@ impl<T: BlockEncryptor> AesIge<T> {
     }
     
     pub fn encrypt_block(&mut self, input: &[u8], output: &mut [u8]) {
-        // debug_assert is fine because these buffers should hopefully
-        // be stack-alloc'd buffers and this will be caught during
-        // debugging if the buffers are too small
         debug_assert!(input.len() == BLOCK_SIZE);
         debug_assert!(output.len() >= BLOCK_SIZE);
         
@@ -91,6 +104,35 @@ impl<T: BlockEncryptor> AesIge<T> {
         self.aes.encrypt_block(temp_in.as_bytes(), output);
         
         ige_enc_after(input, output, &mut self.iv);
+    }
+}
+
+pub struct IgeDecryptor<T: BlockDecryptor> {
+    aes: T,
+    iv: IvBlock,
+}
+
+impl<T: BlockDecryptor> IgeDecryptor<T> {
+    pub fn new(aes: T, iv: &[u8]) -> Self {
+        assert!(aes.block_size() == BLOCK_SIZE);
+        let mut ige = IgeDecryptor {
+            aes: aes,
+            iv: unsafe { mem::uninitialized() },
+        };
+        unsafe { mem::transmute::<_, &mut [u8; 32]>(&mut ige.iv) }.clone_from_slice(iv);
+        ige
+    }
+    
+    pub fn decrypt_block(&mut self, input: &[u8], output: &mut [u8]) {
+        debug_assert!(input.len() == BLOCK_SIZE);
+        debug_assert!(output.len() >= BLOCK_SIZE);
+        
+        let mut temp = AesBlock::uninitialized();
+        ige_dec_before(input, &mut temp, &self.iv);
+        
+        self.aes.decrypt_block(temp.as_bytes(), output);
+        
+        ige_dec_after(input, output, &mut self.iv);
     }
 }
 

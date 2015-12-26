@@ -2,7 +2,7 @@ use std::thread::sleep;
 use std::time::Duration;
 extern crate mtproto;
 
-#[test]
+/*#[test]
 fn test_next_message_id() {
     let mut session = mtproto::rpc::Session::new();
     
@@ -17,4 +17,4 @@ fn test_next_message_id() {
         sleep(Duration::new(0, 000_060_000));
     }
 }
-
+*/

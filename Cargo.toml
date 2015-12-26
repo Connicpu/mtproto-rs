@@ -10,6 +10,9 @@ chrono = "0.2"
 rust-crypto = "0.2"
 crc = "1.2"
 
+[dev-dependencies]
+rand = "0.3"
+
 [build-dependencies]
 syntex = "0.24"
 tl_macros = { path = "tl_macros" }
