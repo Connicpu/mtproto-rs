@@ -3,6 +3,7 @@ use crypto::symmetriccipher::{BlockEncryptor, BlockDecryptor};
 
 const BLOCK_SIZE: usize = 16;
 
+#[derive(Copy, Clone)]
 pub struct IgeEncryptor<T: BlockEncryptor> {
     aes: T,
     iv: IvBlock,
@@ -11,15 +12,13 @@ pub struct IgeEncryptor<T: BlockEncryptor> {
 impl<T: BlockEncryptor> IgeEncryptor<T> {
     pub fn new(aes: T, iv: &[u8]) -> Self {
         assert!(aes.block_size() == BLOCK_SIZE);
-        let mut ige = IgeEncryptor {
+        IgeEncryptor {
             aes: aes,
             iv: IvBlock {
                 iv1: AesBlock::from_bytes(&iv[0..16]),
                 iv2: AesBlock::from_bytes(&iv[16..32]),
             },
-        };
-        unsafe { mem::transmute::<_, &mut [u8; 32]>(&mut ige.iv) }.clone_from_slice(iv);
-        ige
+        }
     }
     
     pub fn encrypt_block(&mut self, input: &[u8], output: &mut [u8]) {
@@ -35,6 +34,7 @@ impl<T: BlockEncryptor> IgeEncryptor<T> {
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct IgeDecryptor<T: BlockDecryptor> {
     aes: T,
     iv: IvBlock,
@@ -43,14 +43,13 @@ pub struct IgeDecryptor<T: BlockDecryptor> {
 impl<T: BlockDecryptor> IgeDecryptor<T> {
     pub fn new(aes: T, iv: &[u8]) -> Self {
         assert!(aes.block_size() == BLOCK_SIZE);
-        let mut ige = IgeDecryptor {
+        IgeDecryptor {
             aes: aes,
             iv: IvBlock {
                 iv1: AesBlock::from_bytes(&iv[0..16]),
                 iv2: AesBlock::from_bytes(&iv[16..32]),
             },
-        };
-        ige
+        }
     }
     
     pub fn decrypt_block(&mut self, input: &[u8], output: &mut [u8]) {
