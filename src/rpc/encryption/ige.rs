@@ -13,7 +13,10 @@ impl<T: BlockEncryptor> IgeEncryptor<T> {
         assert!(aes.block_size() == BLOCK_SIZE);
         let mut ige = IgeEncryptor {
             aes: aes,
-            iv: unsafe { mem::uninitialized() },
+            iv: IvBlock {
+                iv1: AesBlock::from_bytes(&iv[0..16]),
+                iv2: AesBlock::from_bytes(&iv[16..32]),
+            },
         };
         unsafe { mem::transmute::<_, &mut [u8; 32]>(&mut ige.iv) }.clone_from_slice(iv);
         ige
@@ -42,9 +45,11 @@ impl<T: BlockDecryptor> IgeDecryptor<T> {
         assert!(aes.block_size() == BLOCK_SIZE);
         let mut ige = IgeDecryptor {
             aes: aes,
-            iv: unsafe { mem::uninitialized() },
+            iv: IvBlock {
+                iv1: AesBlock::from_bytes(&iv[0..16]),
+                iv2: AesBlock::from_bytes(&iv[16..32]),
+            },
         };
-        unsafe { mem::transmute::<_, &mut [u8; 32]>(&mut ige.iv) }.clone_from_slice(iv);
         ige
     }
     

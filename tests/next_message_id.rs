@@ -1,8 +1,8 @@
+/*extern crate mtproto;
 use std::thread::sleep;
 use std::time::Duration;
-extern crate mtproto;
 
-/*#[test]
+#[test]
 fn test_next_message_id() {
     let mut session = mtproto::rpc::Session::new();
     
