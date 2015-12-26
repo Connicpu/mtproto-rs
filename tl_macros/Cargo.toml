@@ -5,11 +5,11 @@ authors = ["Connor Hilarides <connorcpu@live.com>"]
 build = "build.rs"
 
 [dependencies]
-syntex = "0.22"
-syntex_syntax = "0.22"
-aster = { version = "0.8", features = ["with-syntex"] }
-quasi = { version = "0.3.8", features = ["with-syntex"] }
+syntex = "0.24"
+syntex_syntax = "0.24"
+aster = { version = "0.9", features = ["with-syntex"] }
+quasi = { version = "0.3.11", features = ["with-syntex"] }
 
 [build-dependencies]
-syntex = "0.22"
-quasi_codegen = { version = "0.3.8", features = ["with-syntex"] }
+syntex = "0.24"
+quasi_codegen = { version = "0.3.11", features = ["with-syntex"] }
