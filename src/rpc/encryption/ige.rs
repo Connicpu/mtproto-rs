@@ -3,6 +3,64 @@ use crypto::symmetriccipher::{BlockEncryptor, BlockDecryptor};
 
 const BLOCK_SIZE: usize = 16;
 
+pub struct IgeEncryptor<T: BlockEncryptor> {
+    aes: T,
+    iv: IvBlock,
+}
+
+impl<T: BlockEncryptor> IgeEncryptor<T> {
+    pub fn new(aes: T, iv: &[u8]) -> Self {
+        assert!(aes.block_size() == BLOCK_SIZE);
+        let mut ige = IgeEncryptor {
+            aes: aes,
+            iv: unsafe { mem::uninitialized() },
+        };
+        unsafe { mem::transmute::<_, &mut [u8; 32]>(&mut ige.iv) }.clone_from_slice(iv);
+        ige
+    }
+    
+    pub fn encrypt_block(&mut self, input: &[u8], output: &mut [u8]) {
+        debug_assert!(input.len() == BLOCK_SIZE);
+        debug_assert!(output.len() >= BLOCK_SIZE);
+        
+        ige_enc_before(input, output, &self.iv);
+        
+        let temp_in = AesBlock::from_bytes(output);
+        self.aes.encrypt_block(temp_in.as_bytes(), output);
+        
+        ige_enc_after(input, output, &mut self.iv);
+    }
+}
+
+pub struct IgeDecryptor<T: BlockDecryptor> {
+    aes: T,
+    iv: IvBlock,
+}
+
+impl<T: BlockDecryptor> IgeDecryptor<T> {
+    pub fn new(aes: T, iv: &[u8]) -> Self {
+        assert!(aes.block_size() == BLOCK_SIZE);
+        let mut ige = IgeDecryptor {
+            aes: aes,
+            iv: unsafe { mem::uninitialized() },
+        };
+        unsafe { mem::transmute::<_, &mut [u8; 32]>(&mut ige.iv) }.clone_from_slice(iv);
+        ige
+    }
+    
+    pub fn decrypt_block(&mut self, input: &[u8], output: &mut [u8]) {
+        debug_assert!(input.len() == BLOCK_SIZE);
+        debug_assert!(output.len() >= BLOCK_SIZE);
+        
+        let mut temp = AesBlock::uninitialized();
+        ige_dec_before(input, &mut temp, &self.iv);
+        
+        self.aes.decrypt_block(temp.as_bytes(), output);
+        
+        ige_dec_after(input, output, &mut self.iv);
+    }
+}
+
 #[derive(Copy, Clone)]
 struct AesBlock {
     data: [u32; 4],
@@ -76,63 +134,5 @@ fn ige_dec_after(input: &[u8], output: &mut [u8], iv: &mut IvBlock) {
     
     iv.iv1 = *inp;
     iv.iv2 = *outp;
-}
-
-pub struct IgeEncryptor<T: BlockEncryptor> {
-    aes: T,
-    iv: IvBlock,
-}
-
-impl<T: BlockEncryptor> IgeEncryptor<T> {
-    pub fn new(aes: T, iv: &[u8]) -> Self {
-        assert!(aes.block_size() == BLOCK_SIZE);
-        let mut ige = IgeEncryptor {
-            aes: aes,
-            iv: unsafe { mem::uninitialized() },
-        };
-        unsafe { mem::transmute::<_, &mut [u8; 32]>(&mut ige.iv) }.clone_from_slice(iv);
-        ige
-    }
-    
-    pub fn encrypt_block(&mut self, input: &[u8], output: &mut [u8]) {
-        debug_assert!(input.len() == BLOCK_SIZE);
-        debug_assert!(output.len() >= BLOCK_SIZE);
-        
-        ige_enc_before(input, output, &self.iv);
-        
-        let temp_in = AesBlock::from_bytes(output);
-        self.aes.encrypt_block(temp_in.as_bytes(), output);
-        
-        ige_enc_after(input, output, &mut self.iv);
-    }
-}
-
-pub struct IgeDecryptor<T: BlockDecryptor> {
-    aes: T,
-    iv: IvBlock,
-}
-
-impl<T: BlockDecryptor> IgeDecryptor<T> {
-    pub fn new(aes: T, iv: &[u8]) -> Self {
-        assert!(aes.block_size() == BLOCK_SIZE);
-        let mut ige = IgeDecryptor {
-            aes: aes,
-            iv: unsafe { mem::uninitialized() },
-        };
-        unsafe { mem::transmute::<_, &mut [u8; 32]>(&mut ige.iv) }.clone_from_slice(iv);
-        ige
-    }
-    
-    pub fn decrypt_block(&mut self, input: &[u8], output: &mut [u8]) {
-        debug_assert!(input.len() == BLOCK_SIZE);
-        debug_assert!(output.len() >= BLOCK_SIZE);
-        
-        let mut temp = AesBlock::uninitialized();
-        ige_dec_before(input, &mut temp, &self.iv);
-        
-        self.aes.decrypt_block(temp.as_bytes(), output);
-        
-        ige_dec_after(input, output, &mut self.iv);
-    }
 }
 
