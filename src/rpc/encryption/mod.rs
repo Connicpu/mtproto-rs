@@ -9,6 +9,7 @@ use byteorder::{ByteOrder, LittleEndian, WriteBytesExt, ReadBytesExt};
 pub mod ige;
 
 type MsgKey = [u8; 16];
+const PRELUDE_LEN: usize = 32;
 
 pub fn encrypt_message<W: Write>(session: &mut Session, payload: &[u8], stream: &mut W) -> RpcRes<()> {
     let unencrypted = Unencrypted {
@@ -67,18 +68,24 @@ pub fn decrypt_message<R: Read>(session: &Session, stream: &mut R) -> RpcRes<Vec
     }
     
     let mut enc_buf = [0; ige::BLOCK_SIZE];
-    let mut decrypted_buffer = vec![0; payload_length];
+    let mut prelude_buffer = [0; PRELUDE_LEN];
+    let mut decrypted_buffer = vec![0; payload_length - PRELUDE_LEN];
     let mut decryptor = ige::IgeDecryptor::new(
         AesSafe256Decryptor::new(&aes_key),
         &aes_iv,
     );
     
-    for decrypted in decrypted_buffer.chunks_mut(ige::BLOCK_SIZE) {
-        try!(stream.read_exact(&mut enc_buf));
-        decryptor.decrypt_block(&enc_buf, decrypted);
+    /* decrypt the data */ {
+        let pre_chunks = prelude_buffer.chunks_mut(ige::BLOCK_SIZE);
+        let dec_chunks = decrypted_buffer.chunks_mut(ige::BLOCK_SIZE);
+        for decrypted in pre_chunks.chain(dec_chunks) {
+            try!(stream.read_exact(&mut enc_buf));
+            decryptor.decrypt_block(&enc_buf, decrypted);
+        }
     }
     
-    // TODO: Read out the payload from the raw buffer
+    // TODO: Read the prelude and validate the message (plus remove padding)
+    
     Ok(decrypted_buffer)
 }
 
