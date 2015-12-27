@@ -1,7 +1,106 @@
 use std::mem;
+use std::cmp::min;
+use std::io::{self, Read, Write};
 use crypto::symmetriccipher::{BlockEncryptor, BlockDecryptor};
 
-const BLOCK_SIZE: usize = 16;
+pub const BLOCK_SIZE: usize = 16;
+
+pub trait IgeOperator {
+    fn process(&mut self, input: &[u8], output: &mut [u8]);
+}
+
+pub struct IgeStream<S, I: IgeOperator> {
+    stream: S,
+    ige: I,
+    buffer_pos: u8,
+    buffer_filled: bool,
+    buffer: [u8; BLOCK_SIZE],
+}
+
+impl<S, I: IgeOperator> IgeStream<S, I> {
+    pub fn new(stream: S, ige: I) -> Self {
+        IgeStream {
+            stream: stream,
+            ige: ige,
+            buffer_pos: 0,
+            buffer_filled: false,
+            buffer: [0; BLOCK_SIZE],
+        }
+    }
+}
+
+impl<W: Write, I: IgeOperator> Write for IgeStream<W, I> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let mut start = 0;
+        let mut ige_buf = [0; BLOCK_SIZE];
+        let mut written = 0;
+        
+        if self.buffer_pos != 0 {
+            let extra = BLOCK_SIZE - self.buffer_pos as usize;
+            if buf.len() < extra {
+                let buf_range = (self.buffer_pos as usize)..(self.buffer_pos as usize) + buf.len();
+                self.buffer[buf_range].clone_from_slice(buf);
+                self.buffer_pos += buf.len() as u8;
+                return Ok(buf.len());
+            } else {
+                let buf_range = (self.buffer_pos as usize)..BLOCK_SIZE;
+                self.buffer[buf_range].clone_from_slice(&buf[0..extra]);
+                start = extra;
+            }
+            
+            self.ige.process(&self.buffer, &mut ige_buf);
+            try!(self.stream.write_all(&ige_buf));
+            written += extra;
+            
+            self.buffer_pos = 0;
+        }
+        
+        for chunk in buf[start..].chunks(BLOCK_SIZE) {
+            if chunk.len() == BLOCK_SIZE {
+                self.ige.process(chunk, &mut ige_buf);
+                try!(self.stream.write_all(&ige_buf));
+                written += BLOCK_SIZE;
+            } else {
+                self.buffer[0..chunk.len()].clone_from_slice(chunk);
+                self.buffer_pos = chunk.len() as u8;
+                written += chunk.len();
+            }
+        }
+        
+        Ok(written)
+    }
+    
+    fn flush(&mut self) -> io::Result<()> {
+        self.stream.flush()
+    }
+}
+
+impl<R: Read, I: IgeOperator> Read for IgeStream<R, I> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let total = buf.len();
+        let mut cursor = io::Cursor::new(buf);
+        while (cursor.position() as usize) < total {
+            let available = if self.buffer_filled { BLOCK_SIZE - (self.buffer_pos as usize) } else { 0 };
+            if available != 0 {
+                // Buffer contains decrypted data
+                let amount = min(total - cursor.position() as usize, available);
+                try!(cursor.write_all(&self.buffer[self.buffer_pos as usize..][0..amount]));
+                self.buffer_pos += amount as u8;
+            } else {
+                // Buffer is empty, fill it with decrypted data
+                let mut temp = [0; BLOCK_SIZE];
+                self.buffer_filled = false;
+                self.buffer_pos = 0;
+                
+                try!(self.stream.read_exact(&mut temp));
+                self.ige.process(&temp, &mut self.buffer);
+                self.buffer_filled = true;
+            }
+        }
+        
+        Ok(total)
+    }
+}
 
 #[derive(Copy, Clone)]
 pub struct IgeEncryptor<T: BlockEncryptor> {
@@ -15,8 +114,8 @@ impl<T: BlockEncryptor> IgeEncryptor<T> {
         IgeEncryptor {
             aes: aes,
             iv: IvBlock {
-                iv1: AesBlock::from_bytes(&iv[0..16]),
-                iv2: AesBlock::from_bytes(&iv[16..32]),
+                iv1: AesBlock::from_bytes(&iv[0..BLOCK_SIZE]),
+                iv2: AesBlock::from_bytes(&iv[BLOCK_SIZE..BLOCK_SIZE*2]),
             },
         }
     }
@@ -34,6 +133,12 @@ impl<T: BlockEncryptor> IgeEncryptor<T> {
     }
 }
 
+impl<T: BlockEncryptor> IgeOperator for IgeEncryptor<T> {
+    fn process(&mut self, input: &[u8], output: &mut [u8]) {
+        self.encrypt_block(input, output)
+    }
+}
+
 #[derive(Copy, Clone)]
 pub struct IgeDecryptor<T: BlockDecryptor> {
     aes: T,
@@ -46,8 +151,8 @@ impl<T: BlockDecryptor> IgeDecryptor<T> {
         IgeDecryptor {
             aes: aes,
             iv: IvBlock {
-                iv1: AesBlock::from_bytes(&iv[0..16]),
-                iv2: AesBlock::from_bytes(&iv[16..32]),
+                iv1: AesBlock::from_bytes(&iv[0..BLOCK_SIZE]),
+                iv2: AesBlock::from_bytes(&iv[BLOCK_SIZE..BLOCK_SIZE*2]),
             },
         }
     }
@@ -62,6 +167,12 @@ impl<T: BlockDecryptor> IgeDecryptor<T> {
         self.aes.decrypt_block(temp.as_bytes(), output);
         
         ige_dec_after(input, output, &mut self.iv);
+    }
+}
+
+impl<T: BlockDecryptor> IgeOperator for IgeDecryptor<T> {
+    fn process(&mut self, input: &[u8], output: &mut [u8]) {
+        self.decrypt_block(input, output)
     }
 }
 

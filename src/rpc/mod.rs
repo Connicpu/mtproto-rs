@@ -1,4 +1,6 @@
+use std::io;
 use chrono::{UTC, Timelike};
+use byteorder;
 
 pub mod encryption;
 
@@ -64,6 +66,30 @@ impl Session {
         ((timestamp as u64) << 32) |
         ((nano_bits as u64) << 16) |
         ((id as u64) << 2)
+    }
+}
+
+pub type RpcRes<T> = Result<T, RpcError>;
+
+pub enum RpcError {
+    Io(io::Error),
+    WrongAuthKey,
+    InvalidLength,
+    Unknown,
+}
+
+impl From<io::Error> for RpcError {
+    fn from(io: io::Error) -> RpcError {
+        RpcError::Io(io)
+    }
+}
+
+impl From<byteorder::Error> for RpcError {
+    fn from(bo: byteorder::Error) -> RpcError {
+        match bo {
+            byteorder::Error::Io(io) => From::from(io),
+            _ => RpcError::Unknown,
+        }
     }
 }
 

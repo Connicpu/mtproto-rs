@@ -1,14 +1,86 @@
-use super::Session;
+use super::{Session, RpcRes, RpcError};
 use std::mem;
-use std::io::{Write, Cursor};
+use std::io::{self, Read, Write, Cursor};
 use crypto::digest::Digest;
 use crypto::sha1::Sha1;
-use byteorder::{ByteOrder, LittleEndian};
-use crypto::{symmetriccipher};
+use crypto::aessafe::{AesSafe256Encryptor, AesSafe256Decryptor};
+use byteorder::{ByteOrder, LittleEndian, WriteBytesExt, ReadBytesExt};
 
 pub mod ige;
 
-pub type CipherError = symmetriccipher::SymmetricCipherError;
+type MsgKey = [u8; 16];
+
+pub fn encrypt_message<W: Write>(session: &mut Session, payload: &[u8], stream: &mut W) -> RpcRes<()> {
+    let unencrypted = Unencrypted {
+        salt: session.get_salt(),
+        session_id: session.get_session_id(),
+        message_id: session.next_message_id(),
+        seq_no: session.next_seq_no(),
+        payload: payload,
+    };
+    
+    do_encrypt_message(session, &unencrypted, stream)
+}
+
+pub fn encrypt_content_message<W: Write>(session: &mut Session, payload: &[u8], stream: &mut W) -> RpcRes<()> {
+    let unencrypted = Unencrypted {
+        salt: session.get_salt(),
+        session_id: session.get_session_id(),
+        message_id: session.next_message_id(),
+        seq_no: session.next_content_seq_no(),
+        payload: payload,
+    };
+    
+    do_encrypt_message(session, &unencrypted, stream)
+}
+
+fn do_encrypt_message<W: Write>(session: &Session, unencrypted: &Unencrypted, stream: &mut W) -> RpcRes<()> {
+    let (msg_key, msg_len) = try!(make_message_key(unencrypted));
+    let AuthKey { key_id, aes_key, aes_iv } = make_client_auth_key(session, &msg_key);
+    
+    try!(stream.write_all(&key_id));
+    try!(stream.write_all(&msg_key));
+    try!(stream.write_u32::<LittleEndian>(msg_len as u32));
+    
+    let aes = AesSafe256Encryptor::new(&aes_key);
+    let mut encryptor = ige::IgeStream::new(stream, ige::IgeEncryptor::new(aes, &aes_iv));
+    try!(encryptor.write(unencrypted.payload));
+    
+    Ok(())
+}
+
+pub fn decrypt_message<R: Read>(session: &Session, stream: &mut R) -> RpcRes<Vec<u8>> {
+    let mut key_id: [u8; 8] = unsafe { mem::uninitialized() };
+    let mut msg_key: MsgKey = unsafe { mem::uninitialized() };
+    
+    try!(stream.read_exact(&mut key_id));
+    try!(stream.read_exact(&mut msg_key));
+    
+    let AuthKey { key_id: my_key_id, aes_key, aes_iv } = make_client_auth_key(session, &msg_key);
+    if key_id != my_key_id {
+        return Err(RpcError::WrongAuthKey);
+    }
+    
+    let payload_length = try!(stream.read_u32::<LittleEndian>()) as usize;
+    if payload_length % ige::BLOCK_SIZE != 0 {
+        return Err(RpcError::InvalidLength);
+    }
+    
+    let mut enc_buf = [0; ige::BLOCK_SIZE];
+    let mut decrypted_buffer = vec![0; payload_length];
+    let mut decryptor = ige::IgeDecryptor::new(
+        AesSafe256Decryptor::new(&aes_key),
+        &aes_iv,
+    );
+    
+    for decrypted in decrypted_buffer.chunks_mut(ige::BLOCK_SIZE) {
+        try!(stream.read_exact(&mut enc_buf));
+        decryptor.decrypt_block(&enc_buf, decrypted);
+    }
+    
+    // TODO: Read out the payload from the raw buffer
+    Ok(decrypted_buffer)
+}
 
 struct AuthKey {
     pub key_id: [u8; 8],
@@ -24,53 +96,73 @@ struct Unencrypted<'a> {
     payload: &'a [u8],
 }
 
-trait MessageState {
-    fn push(&mut self, bytes: &[u8]);
+trait MessagePush {
+    fn push(&mut self, bytes: &[u8]) -> RpcRes<()>;
     
-    fn push_u32(&mut self, val: u32) {
+    fn push_padding(&mut self, bytes: &[u8]) -> RpcRes<usize> {
+        try!(self.push(bytes));
+        Ok(bytes.len())
+    }
+    
+    fn push_u32(&mut self, val: u32) -> RpcRes<()> {
         let mut temp_buf = [0; 4];
         LittleEndian::write_u32(&mut temp_buf, val);
-        self.push(&temp_buf);
+        self.push(&temp_buf)
     }
     
-    fn push_u64(&mut self, val: u64) {
+    fn push_u64(&mut self, val: u64) -> RpcRes<()> {
         let mut temp_buf = [0; 8];
         LittleEndian::write_u64(&mut temp_buf, val);
-        self.push(&temp_buf);
+        self.push(&temp_buf)
     }
 }
 
-impl MessageState for Sha1 {
-    fn push(&mut self, bytes: &[u8]) {
-        <Sha1 as Digest>::input(self, bytes)
+impl MessagePush for Sha1 {
+    fn push(&mut self, bytes: &[u8]) -> RpcRes<()> {
+        self.input(bytes);
+        Ok(())
+    }
+    
+    fn push_padding(&mut self, bytes: &[u8]) -> RpcRes<usize> {
+        Ok(bytes.len())
     }
 }
 
-fn push_message<MS: MessageState>(hash: &mut MS, payload: &Unencrypted) {
-    hash.push_u64(payload.salt);
-    hash.push_u64(payload.session_id);
-    hash.push_u64(payload.message_id);
-    hash.push_u32(payload.seq_no);
-    hash.push_u32(payload.payload.len() as u32);
-    hash.push(payload.payload);
+impl<W: Write> MessagePush for ige::IgeStream<W, ige::IgeEncryptor<AesSafe256Encryptor>> {
+    fn push(&mut self, bytes: &[u8]) -> RpcRes<()> {
+        try!(self.write(bytes));
+        Ok(())
+    }
+}
+
+fn push_message<MS: MessagePush>(stream: &mut MS, payload: &Unencrypted) -> RpcRes<usize> {
+    try!(stream.push_u64(payload.salt));
+    try!(stream.push_u64(payload.session_id));
+    try!(stream.push_u64(payload.message_id));
+    try!(stream.push_u32(payload.seq_no));
+    try!(stream.push_u32(payload.payload.len() as u32));
+    try!(stream.push(payload.payload));
     
     let inv_pad = payload.payload.len() % 16;
+    let mut extra_len = 0;
     if inv_pad != 0 {
         let padding = [0; 15];
-        hash.push(&padding[0..16-inv_pad]);
+        extra_len = try!(stream.push_padding(&padding[0..extra_len]));
     }
+    
+    Ok(32 + payload.payload.len() + extra_len)
 }
 
-fn make_message_key(payload: &Unencrypted) -> [u8; 16] {
+fn make_message_key(payload: &Unencrypted) -> RpcRes<(MsgKey, usize)> {
     let mut sha1 = Sha1::new();
-    push_message(&mut sha1, payload);
+    let msg_len = try!(push_message(&mut sha1, payload));
     
     let mut temp_buf = [0; 20];
     let mut message_key = [0; 16];
     sha1.result(&mut temp_buf);
     message_key.clone_from_slice(&temp_buf[0..16]);
     
-    message_key
+    Ok((message_key, msg_len))
 }
 
 fn sha1(parts: &[&[u8]]) -> [u8; 20] {
@@ -111,21 +203,3 @@ fn make_client_auth_key(session: &Session, msg_key: &[u8; 16]) -> AuthKey {
     result
 }
 
-fn do_encrypt_message(session: &Session, unencrypted: &Unencrypted) -> Result<Vec<u8>, CipherError> {
-    let msg_key = make_message_key(unencrypted);
-    let AuthKey { key_id, aes_key, aes_iv } = make_client_auth_key(session, &msg_key);
-    
-    Ok(vec![])
-}
-
-pub fn encrypt_message(session: &mut Session, payload: &[u8]) -> Result<Vec<u8>, CipherError> {
-    let unencrypted = Unencrypted {
-        salt: session.get_salt(),
-        session_id: session.get_session_id(),
-        message_id: session.next_message_id(),
-        seq_no: session.next_seq_no(),
-        payload: payload,
-    };
-    
-    do_encrypt_message(session, &unencrypted)
-}
