@@ -44,7 +44,7 @@ fn do_encrypt_message<W: Write>(session: &Session, unencrypted: &Unencrypted, st
     
     let aes = AesSafe256Encryptor::new(&aes_key);
     let mut encryptor = ige::IgeStream::new(stream, ige::IgeEncryptor::new(aes, &aes_iv));
-    try!(encryptor.write(unencrypted.payload));
+    try!(push_message(&mut encryptor, unencrypted));
     
     Ok(())
 }
