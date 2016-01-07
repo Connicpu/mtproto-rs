@@ -3,6 +3,7 @@ use chrono::{UTC, Timelike};
 use byteorder;
 
 pub mod encryption;
+pub mod functions;
 
 pub struct Session {
     session_id: u64,
