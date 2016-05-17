@@ -1,6 +1,6 @@
 use super::{Session, RpcRes, RpcError};
 use std::mem;
-use std::io::{self, Read, Write, Cursor};
+use std::io::{Read, Write, Cursor};
 use crypto::digest::Digest;
 use crypto::sha1::Sha1;
 use crypto::aessafe::{AesSafe256Encryptor, AesSafe256Decryptor};

@@ -1,4 +1,4 @@
-#![feature(associated_consts, clone_from_slice)]
+#![feature(associated_consts, custom_derive, custom_attribute)]
 
 extern crate byteorder;
 extern crate chrono;

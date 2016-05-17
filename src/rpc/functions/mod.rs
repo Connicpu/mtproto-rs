@@ -1,8 +1,3 @@
-use tl::Type;
+#![allow(non_camel_case_types)] // Dem layer versions
 
-#[derive(TLType)]
-#[tl_id(_da9b0d0d)]
-pub struct InvokeWithLayer<T: Type> {
-    layer: i32,
-    query: T,
-}
+include!(concat!(env!("OUT_DIR"), "/rpc_functions.rs"));

@@ -7,7 +7,7 @@ use syntex::Registry;
 use syntax::ast::{self, Item, MetaItem};
 use syntax::codemap::Span;
 use syntax::ext::base::{ExtCtxt, MultiItemDecorator, Annotatable};
-use syntax::ext::build::AstBuilder;
+//use syntax::ext::build::AstBuilder;
 use syntax::ptr::P;
 
 pub struct TLIdExpander;
@@ -19,12 +19,18 @@ impl MultiItemDecorator for TLIdExpander {
         };
         
         let builder = aster::AstBuilder::new().span(span);
-        let ty = builder.ty().path().segment(item.ident).build().build();
         
-        match item.node {
-            ast::ItemStruct(_, _) => {},
+        let generics = match item.node {
+            ast::ItemStruct(_, ref generics) => generics,
             _ => return,
-        }
+        };
+    
+        let any = builder.path().ids(&["::std", "any", "Any"]).build();
+        let generics = builder.generics().with(generics.clone())
+            .add_ty_param_bound(any).build();
+        let ty = builder.ty().path()
+            .segment(item.ident).with_generics(generics.clone()).build()
+            .build();
         
         let meta_list = match meta_item.node {
             ast::MetaList(_, ref list) => list,
@@ -53,7 +59,7 @@ impl MultiItemDecorator for TLIdExpander {
         };
         
         let item = quote_item!(cx,
-            impl $ty {
+            impl $generics $ty {
                 const TYPE_ID: ::tl::parsing::ConstructorId = ::tl::parsing::ConstructorId($id);
             }
         ).unwrap();
@@ -97,32 +103,41 @@ fn impl_body(
     item: &Item,
     ty: P<ast::Ty>
 ) -> (P<ast::Item>, P<ast::Item>) {
-    let (type_id, serialize, deserialize, deserialize_box, ctors) = match item.node {
-        ast::ItemStruct(ref variant_data, _) => {
-            impl_item_struct(
+    let ((type_id, serialize, deserialize, deserialize_box, ctors), generics) = match item.node {
+        ast::ItemStruct(ref variant_data, ref generics) => {
+            let data = impl_item_struct(
                 cx,
                 builder,
                 item,
                 variant_data,
-                ty.clone()
-            )
+                ty.clone(),
+                generics,
+            );
+            (data, generics)
         }
-        ast::ItemEnum(ref enum_def, _) => {
-            impl_item_enum(
+        ast::ItemEnum(ref enum_def, ref generics) => {
+            let data = impl_item_enum(
                 cx,
                 builder,
                 item.ident,
                 enum_def,
-                ty.clone()
-            )
+                ty.clone(),
+            );
+            (data, generics)
         }
         _ => cx.bug("expected ItemStruct or ItemEnum in #[derive(TLType)]")
     };
     
+    let any = builder.path().ids(&["::std", "any", "Any"]).build();
+    let generics = builder.generics().with(generics.clone())
+        .add_ty_param_bound(any).build();
+    let ty = builder.ty().path()
+        .segment(item.ident).with_generics(generics.clone()).build()
+        .build();
     
     let impltype = quote_item!(cx,
         #[allow(unused_variables)]
-        impl ::tl::Type for $ty {
+        impl $generics ::tl::Type for $ty {
             #[inline]
             fn bare_type() -> bool {
                 false
@@ -156,7 +171,7 @@ fn impl_body(
     ).unwrap();
     
     let impldynamic = quote_item!(cx,
-        impl ::tl::dynamic::TLDynamic for $ty {
+        impl $generics ::tl::dynamic::TLDynamic for $ty {
             fn register_ctors(cstore: &mut ::tl::dynamic::ClassStore) {
                 $ctors
             }
@@ -171,12 +186,22 @@ fn impl_item_struct(
     builder: &aster::AstBuilder,
     item: &Item,
     variant_data: &ast::VariantData,
-    ty: P<ast::Ty>
+    ty: P<ast::Ty>,
+    generics: &ast::Generics,
 ) -> (P<ast::Expr>, P<ast::Expr>, P<ast::Expr>, P<ast::Expr>, P<ast::Block>) {
-    let tid_path = builder.expr().path().id(item.ident).id("TYPE_ID").build();
+    let tid_path = builder.expr().path()
+        .segment(item.ident).with_generics(generics.clone()).build()
+        .id("TYPE_ID")
+        .build();
     let type_id = quote_expr!(cx,
         Some($tid_path)
     );
+    let any = builder.path().ids(&["::std", "any", "Any"]).build();
+    let generics = builder.generics().with(generics.clone())
+        .add_ty_param_bound(any).build();
+    let ty = builder.ty().path()
+        .segment(item.ident).with_generics(generics.clone()).build()
+        .build();
     
     let serialize = match *variant_data {
         ast::VariantData::Unit(_) => {
@@ -317,14 +342,16 @@ fn impl_item_struct(
         }
     });
     
+    let do_deser = builder.path().segment("do_deser").with_generics(generics.clone()).build().build();
+    
     let ctors = quote_block!(cx, {
-        fn do_deser(id: ::tl::parsing::ConstructorId, reader: &mut ::tl::parsing::ReadContext<&mut ::std::io::Read>) -> ::tl::Result<Box<::tl::dynamic::TLObject>> {
+        fn do_deser $generics (id: ::tl::parsing::ConstructorId, reader: &mut ::tl::parsing::ReadContext<&mut ::std::io::Read>) -> ::tl::Result<Box<::tl::dynamic::TLObject>> {
             match <$ty as ::tl::Type>::deserialize_boxed(id, reader) {
                 Ok(o) => Ok(Box::new(o)),
                 Err(e) => Err(e),
             }
         }
-        cstore.add_ctor($tid_path, do_deser);
+        cstore.add_ctor($tid_path, $do_deser);
     }).unwrap();
     
     (type_id, serialize, deserialize, deserialize_box, ctors)
