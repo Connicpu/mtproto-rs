@@ -1,4 +1,3 @@
-use std::mem;
 use std::cmp::min;
 use std::io::{self, Read, Write};
 use crypto::symmetriccipher::{BlockEncryptor, BlockDecryptor};
@@ -161,7 +160,7 @@ impl<T: BlockDecryptor> IgeDecryptor<T> {
         debug_assert!(input.len() == BLOCK_SIZE);
         debug_assert!(output.len() >= BLOCK_SIZE);
         
-        let mut temp = AesBlock::uninitialized();
+        let mut temp = AesBlock::zeroed();
         ige_dec_before(input, &mut temp, &self.iv);
         
         self.aes.decrypt_block(temp.as_bytes(), output);
@@ -177,30 +176,25 @@ impl<T: BlockDecryptor> IgeOperator for IgeDecryptor<T> {
 }
 
 #[derive(Copy, Clone)]
-struct AesBlock {
-    data: [u32; 4],
-}
+struct AesBlock([u8; BLOCK_SIZE]);
 
 impl AesBlock {
-    fn uninitialized() -> AesBlock {
-        unsafe { mem::uninitialized() }
+    fn zeroed() -> AesBlock {
+        AesBlock([0; BLOCK_SIZE])
     }
     
     fn from_bytes(data: &[u8]) -> AesBlock {
-        *AesBlock::from_ref(data)
+        let mut ret = AesBlock::zeroed();
+        ret.copy_from(data);
+        ret
     }
     
-    fn from_ref(data: &[u8]) -> &AesBlock {
-        unsafe { mem::transmute(&data[0]) }
-    }
-    
-    fn from_ref_mut(data: &mut [u8]) -> &mut AesBlock {
-        unsafe { mem::transmute(&mut data[0]) }
+    fn copy_from(&mut self, data: &[u8]) {
+        self.0.copy_from_slice(data)
     }
     
     fn as_bytes(&self) -> &[u8] {
-        let temp: &[u8; BLOCK_SIZE] = unsafe { mem::transmute(&self.data) };
-        temp
+        &self.0
     }
 }
 
@@ -211,43 +205,31 @@ struct IvBlock {
 }
 
 fn ige_enc_before(input: &[u8], output: &mut [u8], iv: &IvBlock) {
-    let inp = AesBlock::from_ref(input);
-    let outp = AesBlock::from_ref_mut(output);
-    
-    for (iv, (i, o)) in iv.iv1.data.iter().zip(inp.data.iter().zip(outp.data.iter_mut())) {
+    for (iv, (i, o)) in iv.iv1.0.iter().zip(input.iter().zip(output.iter_mut())) {
         *o = *i ^ *iv;
     }
 }
 
 fn ige_enc_after(input: &[u8], output: &mut [u8], iv: &mut IvBlock) {
-    let inp = AesBlock::from_ref(input);
-    let outp = AesBlock::from_ref_mut(output);
-    
-    for (iv, o) in iv.iv2.data.iter().zip(outp.data.iter_mut()) {
+    for (iv, o) in iv.iv2.0.iter().zip(output.iter_mut()) {
         *o ^= *iv;
     }
     
-    iv.iv1 = *outp;
-    iv.iv2 = *inp;
+    iv.iv1.copy_from(output);
+    iv.iv2.copy_from(input);
 }
 
 fn ige_dec_before(input: &[u8], temp: &mut AesBlock, iv: &IvBlock) {
-    let inp = AesBlock::from_ref(input);
-    
-    for (iv, (i, t)) in iv.iv2.data.iter().zip(inp.data.iter().zip(temp.data.iter_mut())) {
+    for (iv, (i, t)) in iv.iv2.0.iter().zip(input.iter().zip(temp.0.iter_mut())) {
         *t = *i ^ *iv;
     }
 }
 
 fn ige_dec_after(input: &[u8], output: &mut [u8], iv: &mut IvBlock) {
-    let inp = AesBlock::from_ref(input);
-    let outp = AesBlock::from_ref_mut(output);
-    
-    for (iv, o) in iv.iv1.data.iter().zip(outp.data.iter_mut()) {
+    for (iv, o) in iv.iv1.0.iter().zip(output.iter_mut()) {
         *o ^= *iv;
     }
     
-    iv.iv1 = *inp;
-    iv.iv2 = *outp;
+    iv.iv1.copy_from(input);
+    iv.iv2.copy_from(output);
 }
-
