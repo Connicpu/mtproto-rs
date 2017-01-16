@@ -1,5 +1,4 @@
 use super::{Session, RpcRes, RpcError};
-use std::mem;
 use std::io::{Read, Write, Cursor};
 use crypto::digest::Digest;
 use crypto::sha1::Sha1;
@@ -51,8 +50,8 @@ fn do_encrypt_message<W: Write>(session: &Session, unencrypted: &Unencrypted, st
 }
 
 pub fn decrypt_message<R: Read>(session: &Session, stream: &mut R) -> RpcRes<Vec<u8>> {
-    let mut key_id: [u8; 8] = unsafe { mem::uninitialized() };
-    let mut msg_key: MsgKey = unsafe { mem::uninitialized() };
+    let mut key_id: [u8; 8] = Default::default();
+    let mut msg_key: MsgKey = Default::default();
     
     try!(stream.read_exact(&mut key_id));
     try!(stream.read_exact(&mut msg_key));
@@ -89,6 +88,7 @@ pub fn decrypt_message<R: Read>(session: &Session, stream: &mut R) -> RpcRes<Vec
     Ok(decrypted_buffer)
 }
 
+#[derive(Default)]
 struct AuthKey {
     pub key_id: [u8; 8],
     pub aes_key: [u8; 32],
@@ -203,10 +203,9 @@ fn make_client_auth_key(session: &Session, msg_key: &[u8; 16]) -> AuthKey {
     let aes_key_raw = [ &sha1_a[0..8], &sha1_b[8..20], &sha1_c[4..16] ];
     let aes_iv_raw = [ &sha1_a[8..20], &sha1_b[0..8], &sha1_c[16..20], &sha1_d[0..8] ];
     
-    let mut result = AuthKey { ..unsafe{ mem::uninitialized() } };
+    let mut result: AuthKey = Default::default();
     set_slice_parts(&mut result.key_id, &[ &key_id_raw[0..8] ]);
     set_slice_parts(&mut result.aes_key, &aes_key_raw);
     set_slice_parts(&mut result.aes_iv, &aes_iv_raw);
     result
 }
-
