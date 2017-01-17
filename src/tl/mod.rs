@@ -48,22 +48,22 @@ macro_rules! impl_tl_primitive {
             fn bare_type() -> bool {
                 true
             }
-            
+
             fn type_id(&self) -> Option<ConstructorId> {
                 None
             }
-            
+
             fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> Result<()> {
                 use byteorder::{LittleEndian, WriteBytesExt};
                 try!(writer.$write::<LittleEndian>(*self));
                 Ok(())
             }
-            
+
             fn deserialize<R: Read>(reader: &mut ReadContext<R>) -> Result<Self> {
                 use byteorder::{LittleEndian, ReadBytesExt};
                 Ok(try!(reader.$read::<LittleEndian>()))
             }
-            
+
             fn deserialize_boxed<R: Read>(_: ConstructorId, _: &mut ReadContext<R>) -> Result<Self> {
                 Err(Error::PrimitiveAsPolymorphic)
             }
@@ -85,12 +85,12 @@ impl<'a, T: Type> Type for &'a [T] {
     fn bare_type() -> bool {
         false
     }
-    
+
     #[inline]
     fn type_id(&self) -> Option<ConstructorId> {
         Some(VEC_TYPE_ID)
     }
-    
+
     fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> Result<()> {
         assert!(self.len() <= std::u32::MAX as usize);
         try!(writer.write_u32::<LittleEndian>(self.len() as u32));
@@ -99,11 +99,11 @@ impl<'a, T: Type> Type for &'a [T] {
         }
         Ok(())
     }
-    
+
     fn deserialize<R: Read>(_: &mut ReadContext<R>) -> Result<Self> {
         Err(Error::ReceivedSendType)
     }
-    
+
     fn deserialize_boxed<R: Read>(_: ConstructorId, _: &mut ReadContext<R>) -> Result<Self> {
         Err(Error::ReceivedSendType)
     }
@@ -114,16 +114,16 @@ impl<T: Type> Type for Vec<T> {
     fn bare_type() -> bool {
         false
     }
-    
+
     #[inline]
     fn type_id(&self) -> Option<ConstructorId> {
         Some(VEC_TYPE_ID)
     }
-    
+
     fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> Result<()> {
         (&self[..]).serialize(writer)
     }
-    
+
     fn deserialize<R: Read>(reader: &mut ReadContext<R>) -> Result<Self> {
         let mut vec = vec![];
         let count = try!(reader.read_u32::<LittleEndian>()) as usize;
@@ -133,12 +133,12 @@ impl<T: Type> Type for Vec<T> {
         }
         Ok(vec)
     }
-    
+
     fn deserialize_boxed<R: Read>(id: ConstructorId, reader: &mut ReadContext<R>) -> Result<Self> {
         if id != VEC_TYPE_ID {
             return Err(Error::InvalidData);
         }
-        
+
         Vec::deserialize(reader)
     }
 }
@@ -148,36 +148,57 @@ impl<'a> Type for &'a [u8] {
     fn bare_type() -> bool {
         true
     }
-    
+
     #[inline]
     fn type_id(&self) -> Option<ConstructorId> {
         None
     }
-    
+
     fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> Result<()> {
         let len = self.len();
         assert!(len & 0xFF000000 == 0); // len fits in a 24-bit integer
-        
+
         // Writing string length is WAT
-        if len <= 253 {
-            try!(writer.write_u8(len as u8));
+        let mut to_write = *self;
+        let first_word = if len <= 253 {
+            let mut ret = len as u32;
+            for (e, &b) in self.iter().take(3).enumerate() {
+                ret |= (b as u32) << ((e + 1) * 8);
+            }
+            if len > 3 {
+                to_write = &to_write[3..];
+            } else {
+                to_write = b"";
+            }
+            ret
         } else {
-            let mut buf = [254; 5];
-            LittleEndian::write_u32(&mut buf[1..], len as u32);
-            try!(writer.write_all(&buf[0..4]));
-        }
-        
+            254 | ((len as u32) << 8)
+        };
+        writer.write_u32::<::byteorder::BigEndian>(first_word)?;
+        println!("fw {:x} {:?}", first_word, to_write);
+
         // Write the actual string and padding
-        try!(writer.write_all(*self));
-        try!(writer.pad(4));
-        
+        if to_write.len() > 4 {
+            let write_len = to_write.len() & !3;
+            writer.write_all(&to_write[..write_len])?;
+            to_write = &to_write[write_len..];
+        }
+        if !to_write.is_empty() {
+            let mut last_word = 0u32;
+            for (e, &b) in to_write.into_iter().enumerate() {
+                last_word |= (b as u32) << (e * 8);
+            }
+            writer.write_u32::<::byteorder::BigEndian>(last_word)?;
+            println!("lw {:x} {:?}", last_word, to_write);
+        }
+
         Ok(())
     }
-    
+
     fn deserialize<R: Read>(_: &mut ReadContext<R>) -> Result<Self> {
         Err(Error::ReceivedSendType)
     }
-    
+
     fn deserialize_boxed<R: Read>(_: ConstructorId, _: &mut ReadContext<R>) -> Result<Self> {
         Err(Error::ReceivedSendType)
     }
@@ -188,16 +209,16 @@ impl Type for Vec<u8> {
     fn bare_type() -> bool {
         true
     }
-    
+
     #[inline]
     fn type_id(&self) -> Option<ConstructorId> {
         None
     }
-    
+
     fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> Result<()> {
         (&self[..]).serialize(writer)
     }
-    
+
     fn deserialize<R: Read>(reader: &mut ReadContext<R>) -> Result<Self> {
         let low_len = try!(reader.read_u8());
         let len = if low_len != 254 {
@@ -207,14 +228,14 @@ impl Type for Vec<u8> {
             try!(reader.read_exact(&mut buf[0..3]));
             LittleEndian::read_u32(&buf) as usize
         };
-        
+
         let mut bytes = vec![0; len];
         try!(reader.read_exact(&mut bytes));
         try!(reader.align(4));
-        
+
         Ok(bytes)
     }
-    
+
     fn deserialize_boxed<R: Read>(_: ConstructorId, _: &mut ReadContext<R>) -> Result<Self> {
         Err(Error::PrimitiveAsPolymorphic)
     }
@@ -225,21 +246,21 @@ impl Type for String {
     fn bare_type() -> bool {
         true
     }
-    
+
     #[inline]
     fn type_id(&self) -> Option<ConstructorId> {
         None
     }
-    
+
     fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> Result<()> {
         (&self[..]).serialize(writer)
     }
-    
+
     fn deserialize<R: Read>(reader: &mut ReadContext<R>) -> Result<Self> {
         let bytes = try!(reader.read_bare());
         Ok(try!(String::from_utf8(bytes)))
     }
-    
+
     fn deserialize_boxed<R: Read>(_: ConstructorId, _: &mut ReadContext<R>) -> Result<Self> {
         Err(Error::PrimitiveAsPolymorphic)
     }
@@ -250,21 +271,21 @@ impl<'a> Type for &'a str {
     fn bare_type() -> bool {
         true
     }
-    
+
     #[inline]
     fn type_id(&self) -> Option<ConstructorId> {
         None
     }
-    
+
     fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> Result<()> {
         try!(writer.write_bare(&self.as_bytes()));
         Ok(())
     }
-    
+
     fn deserialize<R: Read>(_: &mut ReadContext<R>) -> Result<Self> {
         Err(Error::ReceivedSendType)
     }
-    
+
     fn deserialize_boxed<R: Read>(_: ConstructorId, _: &mut ReadContext<R>) -> Result<Self> {
         Err(Error::ReceivedSendType)
     }
@@ -275,20 +296,20 @@ impl Type for bool {
     fn bare_type() -> bool {
         Bool::bare_type()
     }
-    
+
     #[inline]
     fn type_id(&self) -> Option<ConstructorId> {
         Bool(*self).type_id()
     }
-    
+
     fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> Result<()> {
         Bool(*self).serialize(writer)
     }
-    
+
     fn deserialize<R: Read>(reader: &mut ReadContext<R>) -> Result<Self> {
         Ok(try!(Bool::deserialize(reader)).0)
     }
-    
+
     fn deserialize_boxed<R: Read>(id: ConstructorId, reader: &mut ReadContext<R>) -> Result<Self> {
         Ok(try!(Bool::deserialize_boxed(id, reader)).0)
     }

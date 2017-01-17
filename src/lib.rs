@@ -4,6 +4,7 @@ extern crate byteorder;
 extern crate chrono;
 extern crate crypto;
 extern crate crc;
+extern crate num;
 
 pub mod tl;
 pub mod rpc;

@@ -33,7 +33,7 @@ impl<W: Write, I: IgeOperator> Write for IgeStream<W, I> {
         let mut start = 0;
         let mut ige_buf = [0; BLOCK_SIZE];
         let mut written = 0;
-        
+
         if self.buffer_pos != 0 {
             let extra = BLOCK_SIZE - self.buffer_pos as usize;
             if buf.len() < extra {
@@ -46,14 +46,14 @@ impl<W: Write, I: IgeOperator> Write for IgeStream<W, I> {
                 self.buffer[buf_range].clone_from_slice(&buf[0..extra]);
                 start = extra;
             }
-            
+
             self.ige.process(&self.buffer, &mut ige_buf);
             try!(self.stream.write_all(&ige_buf));
             written += extra;
-            
+
             self.buffer_pos = 0;
         }
-        
+
         for chunk in buf[start..].chunks(BLOCK_SIZE) {
             if chunk.len() == BLOCK_SIZE {
                 self.ige.process(chunk, &mut ige_buf);
@@ -65,10 +65,10 @@ impl<W: Write, I: IgeOperator> Write for IgeStream<W, I> {
                 written += chunk.len();
             }
         }
-        
+
         Ok(written)
     }
-    
+
     fn flush(&mut self) -> io::Result<()> {
         self.stream.flush()
     }
@@ -90,13 +90,13 @@ impl<R: Read, I: IgeOperator> Read for IgeStream<R, I> {
                 let mut temp = [0; BLOCK_SIZE];
                 self.buffer_filled = false;
                 self.buffer_pos = 0;
-                
+
                 try!(self.stream.read_exact(&mut temp));
                 self.ige.process(&temp, &mut self.buffer);
                 self.buffer_filled = true;
             }
         }
-        
+
         Ok(total)
     }
 }
@@ -118,16 +118,16 @@ impl<T: BlockEncryptor> IgeEncryptor<T> {
             },
         }
     }
-    
+
     pub fn encrypt_block(&mut self, input: &[u8], output: &mut [u8]) {
         debug_assert!(input.len() == BLOCK_SIZE);
         debug_assert!(output.len() >= BLOCK_SIZE);
-        
+
         ige_enc_before(input, output, &self.iv);
-        
+
         let temp_in = AesBlock::from_bytes(output);
         self.aes.encrypt_block(temp_in.as_bytes(), output);
-        
+
         ige_enc_after(input, output, &mut self.iv);
     }
 }
@@ -155,16 +155,16 @@ impl<T: BlockDecryptor> IgeDecryptor<T> {
             },
         }
     }
-    
+
     pub fn decrypt_block(&mut self, input: &[u8], output: &mut [u8]) {
         debug_assert!(input.len() == BLOCK_SIZE);
         debug_assert!(output.len() >= BLOCK_SIZE);
-        
+
         let mut temp = AesBlock::zeroed();
         ige_dec_before(input, &mut temp, &self.iv);
-        
+
         self.aes.decrypt_block(temp.as_bytes(), output);
-        
+
         ige_dec_after(input, output, &mut self.iv);
     }
 }
@@ -182,17 +182,17 @@ impl AesBlock {
     fn zeroed() -> AesBlock {
         AesBlock([0; BLOCK_SIZE])
     }
-    
+
     fn from_bytes(data: &[u8]) -> AesBlock {
         let mut ret = AesBlock::zeroed();
         ret.copy_from(data);
         ret
     }
-    
+
     fn copy_from(&mut self, data: &[u8]) {
         self.0.copy_from_slice(data)
     }
-    
+
     fn as_bytes(&self) -> &[u8] {
         &self.0
     }
@@ -214,7 +214,7 @@ fn ige_enc_after(input: &[u8], output: &mut [u8], iv: &mut IvBlock) {
     for (iv, o) in iv.iv2.0.iter().zip(output.iter_mut()) {
         *o ^= *iv;
     }
-    
+
     iv.iv1.copy_from(output);
     iv.iv2.copy_from(input);
 }
@@ -229,7 +229,7 @@ fn ige_dec_after(input: &[u8], output: &mut [u8], iv: &mut IvBlock) {
     for (iv, o) in iv.iv1.0.iter().zip(output.iter_mut()) {
         *o ^= *iv;
     }
-    
+
     iv.iv1.copy_from(input);
     iv.iv2.copy_from(output);
 }
