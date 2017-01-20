@@ -14,7 +14,7 @@ impl Type for Bool {
     fn bare_type() -> bool {
         false
     }
-    
+
     fn type_id(&self) -> Option<ConstructorId> {
         if self.0 {
             Some(Bool::TRUE)
@@ -22,15 +22,15 @@ impl Type for Bool {
             Some(Bool::FALSE)
         }
     }
-    
+
     fn serialize<W: Write>(&self, _: &mut WriteContext<W>) -> tl::Result<()> {
         Ok(())
     }
-    
+
     fn deserialize<R: Read>(_: &mut ReadContext<R>) -> tl::Result<Self> {
         Err(tl::Error::BoxedAsBare)
     }
-    
+
     fn deserialize_boxed<R: Read>(id: ConstructorId, _: &mut ReadContext<R>) -> tl::Result<Self> {
         match id {
             Bool::TRUE => Ok(Bool(true)),

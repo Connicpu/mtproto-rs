@@ -7,7 +7,7 @@ use std::path::Path;
 fn compile(input: &str, out: &str) {
     let mut registry = syntex::Registry::new();
     tl_macros::register(&mut registry);
-    
+
     let src = Path::new(input);
     let dst = Path::new(&env::var("OUT_DIR").unwrap()).join(out);
     registry.expand("", &src, &dst).unwrap();

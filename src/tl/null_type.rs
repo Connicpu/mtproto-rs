@@ -14,19 +14,19 @@ impl Type for Null {
     fn bare_type() -> bool {
         false
     }
-    
+
     fn type_id(&self) -> Option<ConstructorId> {
         Some(Null::SIGNATURE)
     }
-    
+
     fn serialize<W: Write>(&self, _: &mut WriteContext<W>) -> tl::Result<()> {
         Ok(())
     }
-    
+
     fn deserialize<R: Read>(_: &mut ReadContext<R>) -> tl::Result<Self> {
         Err(tl::Error::BoxedAsBare)
     }
-    
+
     fn deserialize_boxed<R: Read>(id: ConstructorId, _: &mut ReadContext<R>) -> tl::Result<Self> {
         match id {
             Null::SIGNATURE => Ok(Null),

@@ -25,34 +25,34 @@ impl Session {
             auth_key: *authorization_key,
         }
     }
-    
+
     pub fn get_session_id(&self) -> u64 {
         self.session_id
     }
-    
+
     pub fn get_salt(&self) -> u64 {
         self.server_salt
     }
-    
+
     pub fn next_seq_no(&self) -> u32 {
         self.seq_no * 2
     }
-    
+
     pub fn next_content_seq_no(&mut self) -> u32 {
         let seq = self.seq_no * 2;
         self.seq_no += 1;
         seq
     }
-    
+
     pub fn get_authorization_key(&self) -> &[u8; 256] {
         &self.auth_key
     }
-    
+
     pub fn next_message_id(&mut self) -> u64 {
         let time = UTC::now();
         let timestamp = time.timestamp();
         let nano = time.nanosecond();
-        
+
         let nano_bits = (nano >> 14) as u16 & 0xFFFC;
         // For the highly unlikely case that the nanosecond is the same
         if nano_bits == self.message_id_last_nano {
@@ -62,7 +62,7 @@ impl Session {
             self.message_id_seq = 0b0101010101010101; // too many zeroes = ignored, so
         }
         let id = self.message_id_seq;
-        
+
         // [ lower 32-bits of unix time | bits 13..30 of the nanosecond (14 total) | id (16 total) | 0b00 ]
         ((timestamp as u64) << 32) |
         ((nano_bits as u64) << 16) |

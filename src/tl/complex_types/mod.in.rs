@@ -591,19 +591,19 @@ pub enum MessagesFilter {
 pub enum Update {
     #[tl_id(_13abdb3)] NewMessage {
         message: Message,
-        pts: i32 
+        pts: i32
     },
     #[tl_id(_4e90bfd6)] MessageId {
         id: i32,
-        random_id: i64, 
+        random_id: i64,
     },
     #[tl_id(_c6649e31)] ReadMessages {
         messages: Vector<i32>,
-        pts: i32, 
+        pts: i32,
     },
     #[tl_id(_a92bfe26)] DeleteMessages {
         messages: Vector<i32>,
-        pts: i32, 
+        pts: i32,
     },
     #[tl_id(_5c486927)] UserTypings {
         user_id: i32,
@@ -625,17 +625,17 @@ pub enum Update {
         user_id: i32,
         first_name: String,
         last_name: String,
-        username: String, 
+        username: String,
     },
     #[tl_id(_95313b0c)] UserPhoto {
         user_id: i32,
         date: i32,
         photo: UserProfilePhoto,
-        previous: bool, 
+        previous: bool,
     },
     #[tl_id(_2575bbb9)] ContactRegistered {
         user_id: i32,
-        date: i32, 
+        date: i32,
     },
     #[tl_id(_51a48a9a)] ContactLink {
         user_id: i32,
@@ -785,7 +785,7 @@ pub enum EncryptedChat {
         date: i32,
         admin_id: i32,
         participant_id: i32,
-        
+
     },
     #[tl_id(_c878527e)] Requested {
         id: i32,
@@ -1042,7 +1042,7 @@ pub enum DecryptedMessage {
         random_bytes: Vec<u8>,
         action: DecryptedMessageAction,
     },
-    
+
     // ==Layer 17==
     #[tl_id(_204d3878)] Message_v17 {
         random_id: i64,
@@ -1107,7 +1107,7 @@ pub enum DecryptedMessageMedia {
         key: Vec<u8>,
         iv: Vec<u8>,
     },
-    
+
     // ==Layer 17==
     #[tl_id(_524a415d)] Video_v17 {
         thumb: Vec<u8>,
@@ -1130,7 +1130,7 @@ pub enum DecryptedMessageMedia {
         key: Vec<u8>,
         iv: Vec<u8>,
     },
-    
+
     // ==Layer 23==
     #[tl_id(_fa95b0dd)] ExternalDocument_v23 {
         id: i64,
@@ -1160,7 +1160,7 @@ pub enum DecryptedMessageAction {
         random_ids: Vector<i64>,
     },
     #[tl_id(_6719e45c)] FlushHistory_v8,
-    
+
     // ==Layer 17==
     #[tl_id(_511110b0)] Resend_v17 {
         start_seq_no: i32,
@@ -1172,7 +1172,7 @@ pub enum DecryptedMessageAction {
     #[tl_id(_ccb27641)] Typing_v17 {
         action: SendMessageAction,
     },
-    
+
     // ==Layer 20==
     #[tl_id(_f3c9611b)] RequestKey_v20 {
         exchange_id: i64,
@@ -1205,4 +1205,4 @@ pub enum DecryptedMessageLayer {
     }
 }
 
-// #[tl_id(_)] 
+// #[tl_id(_)]

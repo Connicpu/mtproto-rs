@@ -17,31 +17,31 @@ impl MultiItemDecorator for TLIdExpander {
             Annotatable::Item(ref item) => item,
             _ => return,
         };
-        
+
         let builder = aster::AstBuilder::new().span(span);
-        
+
         let generics = match item.node {
             ast::ItemStruct(_, ref generics) => generics,
             _ => return,
         };
-    
+
         let any = builder.path().ids(&["::std", "any", "Any"]).build();
         let generics = builder.generics().with(generics.clone())
             .add_ty_param_bound(any).build();
         let ty = builder.ty().path()
             .segment(item.ident).with_generics(generics.clone()).build()
             .build();
-        
+
         let meta_list = match meta_item.node {
             ast::MetaList(_, ref list) => list,
             _ => return,
         };
-        
+
         if meta_list.len() != 1 {
             cx.span_err(span, "#[tl_id(...)] takes exactly 1 parameter");
             return;
         }
-        
+
         let tl_id = match meta_list[0].node {
             ast::MetaWord(ref tl_id) => &**tl_id,
             _ => {
@@ -49,7 +49,7 @@ impl MultiItemDecorator for TLIdExpander {
                 return;
             }
         };
-        
+
         let id = match u32::from_str_radix(&tl_id[1..], 16) {
             Ok(id) => id,
             Err(_) => {
@@ -57,13 +57,13 @@ impl MultiItemDecorator for TLIdExpander {
                 return;
             }
         };
-        
+
         let item = quote_item!(cx,
             impl $generics $ty {
                 const TYPE_ID: ::tl::parsing::ConstructorId = ::tl::parsing::ConstructorId($id);
             }
         ).unwrap();
-        
+
         push(Annotatable::Item(item));
     }
 }
@@ -81,17 +81,17 @@ impl MultiItemDecorator for ComplexExpander {
                 return;
             }
         };
-        
+
         let builder = aster::AstBuilder::new().span(span);
         let ty = builder.ty().path().segment(item.ident).build().build();
-        
+
         let (impltype, impldynamic) = impl_body(
             cx,
             &builder,
             &item,
             ty
         );
-        
+
         push(Annotatable::Item(impltype));
         push(Annotatable::Item(impldynamic));
     }
@@ -127,14 +127,14 @@ fn impl_body(
         }
         _ => cx.bug("expected ItemStruct or ItemEnum in #[derive(TLType)]")
     };
-    
+
     let any = builder.path().ids(&["::std", "any", "Any"]).build();
     let generics = builder.generics().with(generics.clone())
         .add_ty_param_bound(any).build();
     let ty = builder.ty().path()
         .segment(item.ident).with_generics(generics.clone()).build()
         .build();
-    
+
     let impltype = quote_item!(cx,
         #[allow(unused_variables)]
         impl $generics ::tl::Type for $ty {
@@ -142,25 +142,25 @@ fn impl_body(
             fn bare_type() -> bool {
                 false
             }
-            
+
             #[inline]
             fn type_id(&self) -> Option<::tl::parsing::ConstructorId> {
                 $type_id
             }
-            
+
             fn serialize<W: ::std::io::Write>(
                 &self,
                 writer: &mut ::tl::parsing::WriteContext<W>
             ) -> ::tl::Result<()> {
                 $serialize
             }
-            
+
             fn deserialize<R: ::std::io::Read>(
                 reader: &mut ::tl::parsing::ReadContext<R>
             ) -> ::tl::Result<Self> {
                 $deserialize
             }
-            
+
             fn deserialize_boxed<R: ::std::io::Read>(
                 id: ::tl::parsing::ConstructorId,
                 reader: &mut ::tl::parsing::ReadContext<R>
@@ -169,7 +169,7 @@ fn impl_body(
             }
         }
     ).unwrap();
-    
+
     let impldynamic = quote_item!(cx,
         impl $generics ::tl::dynamic::TLDynamic for $ty {
             fn register_ctors(cstore: &mut ::tl::dynamic::ClassStore) {
@@ -177,7 +177,7 @@ fn impl_body(
             }
         }
     ).unwrap();
-    
+
     (impltype, impldynamic)
 }
 
@@ -202,7 +202,7 @@ fn impl_item_struct(
     let ty = builder.ty().path()
         .segment(item.ident).with_generics(generics.clone()).build()
         .build();
-    
+
     let serialize = match *variant_data {
         ast::VariantData::Unit(_) => {
             quote_expr!(cx,
@@ -213,20 +213,20 @@ fn impl_item_struct(
             let field_names: Vec<ast::Ident> = (0..fields.len())
                 .map(|i| builder.id(format!("__field{}", i)))
                 .collect();
-            
+
             let pat = builder.pat().enum_()
                 .id(item.ident).build()
                 .with_pats(
                     field_names.iter().map(|field| builder.pat().ref_id(field))
                 )
                 .build();
-            
+
             let ser_fields = builder.block().with_stmts(field_names.iter().map(|field| {
                 quote_stmt!(cx,
                     try!(writer.write_generic($field));
                 ).unwrap()
             })).build();
-            
+
             quote_expr!(cx, {
                 let $pat = *self;
                 $ser_fields
@@ -237,7 +237,7 @@ fn impl_item_struct(
             let field_names: Vec<ast::Ident> = (0..fields.len())
                 .map(|i| builder.id(format!("__field{}", i)))
                 .collect();
-            
+
             let pat = builder.pat().struct_()
                 .id(item.ident).build()
                 .with_pats(
@@ -248,18 +248,18 @@ fn impl_item_struct(
                                 cx.bug("struct variant has unnamed fields")
                             }
                         };
-                        
+
                         (name, builder.pat().ref_id(field_name))
                     })
                 )
                 .build();
-            
+
             let ser_fields = builder.block().with_stmts(field_names.iter().map(|field| {
                 quote_stmt!(cx,
                     try!(writer.write_generic($field));
                 ).unwrap()
             })).build();
-            
+
             quote_expr!(cx, {
                 let $pat = *self;
                 $ser_fields
@@ -267,7 +267,7 @@ fn impl_item_struct(
             })
         }
     };
-    
+
     let deserialize = match *variant_data {
         ast::VariantData::Unit(_) => {
             let var = builder.path().id(item.ident).build();
@@ -279,7 +279,7 @@ fn impl_item_struct(
             let field_names: Vec<ast::Ident> = (0..fields.len())
                 .map(|i| builder.id(format!("__field{}", i)))
                 .collect();
-                
+
             let read_ops = builder.expr().block().with_stmts(
                 field_names.iter()
                 .map(|field| {
@@ -288,14 +288,14 @@ fn impl_item_struct(
                     ).unwrap()
                 })
             );
-            
+
             let pat = builder.expr().call()
                 .path().id(item.ident).build()
                 .with_args(field_names.iter().map(|field_name| {
                     builder.expr().id(field_name)
                 }))
                 .build();
-            
+
             read_ops.expr().build(quote_expr!(cx,
                 Ok($pat)
             ))
@@ -304,7 +304,7 @@ fn impl_item_struct(
             let field_names: Vec<ast::Ident> = (0..fields.len())
                 .map(|i| builder.id(format!("__field{}", i)))
                 .collect();
-                
+
             let read_ops = builder.expr().block().with_stmts(
                 field_names.iter()
                 .map(|field| {
@@ -313,7 +313,7 @@ fn impl_item_struct(
                     ).unwrap()
                 })
             );
-                
+
             let pat = builder.expr().struct_()
                 .id(item.ident).build()
                 .with_id_exprs(fields.iter().zip(&field_names).map(|(field, field_name)| {
@@ -323,17 +323,17 @@ fn impl_item_struct(
                             cx.bug("struct variant has unnamed fields")
                         }
                     };
-                    
+
                     (name, builder.expr().id(field_name))
                 }))
                 .build();
-            
+
             read_ops.expr().build(quote_expr!(cx,
                 Ok($pat)
             ))
         }
     };
-    
+
     let deserialize_box = quote_expr!(cx, {
         if id == $tid_path {
             Self::deserialize(reader)
@@ -341,9 +341,9 @@ fn impl_item_struct(
             Err(::tl::error::Error::InvalidType)
         }
     });
-    
+
     let do_deser = builder.path().segment("do_deser").with_generics(generics.clone()).build().build();
-    
+
     let ctors = quote_block!(cx, {
         fn do_deser $generics (id: ::tl::parsing::ConstructorId, reader: &mut ::tl::parsing::ReadContext<&mut ::std::io::Read>) -> ::tl::Result<Box<::tl::dynamic::TLObject>> {
             match <$ty as ::tl::Type>::deserialize_boxed(id, reader) {
@@ -353,7 +353,7 @@ fn impl_item_struct(
         }
         cstore.add_ctor($tid_path, $do_deser);
     }).unwrap();
-    
+
     (type_id, serialize, deserialize, deserialize_box, ctors)
 }
 
@@ -370,26 +370,26 @@ fn impl_item_enum(
         type_ident,
         enum_def
     );
-    
+
     let serialize = impl_enum_serialize(
         cx,
         builder,
         type_ident,
         enum_def
     );
-    
+
     let deserialize = quote_expr!(cx, {
         let _ = reader;
         Err(::tl::error::Error::BoxedAsBare)
     });
-    
+
     let deserialize_box = impl_enum_deserialize(
         cx,
         builder,
         type_ident,
         enum_def
     );
-    
+
     let ctor_adds = builder.block().with_stmts(enum_def.variants.iter()
         .map(|variant| {
             let var_id = variant.node.attrs.iter().filter_map(|attr| {
@@ -406,7 +406,7 @@ fn impl_item_enum(
             quote_stmt!(cx, cstore.add_ctor(::tl::parsing::ConstructorId($var_id), do_deser)).unwrap()
         }))
         .build();
-    
+
     let ctors = quote_block!(cx, {
         fn do_deser(id: ::tl::parsing::ConstructorId, reader: &mut ::tl::parsing::ReadContext<&mut ::std::io::Read>) -> ::tl::Result<Box<::tl::dynamic::TLObject>> {
             match <$ty as ::tl::Type>::deserialize_boxed(id, reader) {
@@ -416,7 +416,7 @@ fn impl_item_enum(
         }
         $ctor_adds
     }).unwrap();
-    
+
     (type_id, serialize, deserialize, deserialize_box, ctors)
 }
 
@@ -436,7 +436,7 @@ fn impl_enum_type_id(
             )
         })
         .collect();
-        
+
     quote_expr!(cx,
         match *self {
             $arms
@@ -451,7 +451,7 @@ fn impl_enum_type_id_arm(
     variant: &ast::Variant,
 ) -> ast::Arm {
     let variant_ident = variant.node.name;
-    
+
     let var_id = variant.node.attrs.iter().filter_map(|attr| {
         if let ast::MetaList(ref n, ref list) = attr.node.value.node {
             if &**n == "tl_id" {
@@ -463,7 +463,7 @@ fn impl_enum_type_id_arm(
         }
         None
     }).next().unwrap();
-    
+
     let pat = match variant.node.data {
         ast::VariantData::Unit(_) => {
             builder.pat().enum_()
@@ -491,14 +491,14 @@ fn impl_enum_type_id_arm(
                                 cx.bug("struct variant has unnamed fields")
                             }
                         };
-                        
+
                         (name, builder.pat().id(&unused_field))
                     })
                 )
                 .build()
         }
     };
-            
+
     quote_arm!(cx,
         $pat => {
             Some(::tl::parsing::ConstructorId($var_id))
@@ -522,7 +522,7 @@ fn impl_enum_serialize(
             )
         })
         .collect();
-        
+
     quote_expr!(cx,
         match *self {
             $arms
@@ -537,13 +537,13 @@ fn impl_enum_serialize_arm(
     variant: &ast::Variant,
 ) -> ast::Arm {
     let variant_ident = variant.node.name;
-    
+
     match variant.node.data {
         ast::VariantData::Unit(_) => {
             let pat = builder.pat().enum_()
                 .id(type_ident).id(variant_ident)
                 .build().build();
-            
+
             quote_arm!(cx,
                 $pat => {
                     Ok(())
@@ -554,20 +554,20 @@ fn impl_enum_serialize_arm(
             let field_names: Vec<ast::Ident> = (0..fields.len())
                 .map(|i| builder.id(format!("__field{}", i)))
                 .collect();
-            
+
             let pat = builder.pat().enum_()
                 .id(type_ident).id(variant_ident).build()
                 .with_pats(
                     field_names.iter().map(|field| builder.pat().ref_id(field))
                 )
                 .build();
-            
+
             let ser_fields = builder.block().with_stmts(field_names.iter().map(|field| {
                 quote_stmt!(cx,
                     try!(writer.write_generic($field));
                 ).unwrap()
             })).build();
-            
+
             quote_arm!(cx,
                 $pat => {
                     $ser_fields
@@ -579,7 +579,7 @@ fn impl_enum_serialize_arm(
             let field_names: Vec<ast::Ident> = (0..fields.len())
                 .map(|i| builder.id(format!("__field{}", i)))
                 .collect();
-            
+
             let pat = builder.pat().struct_()
                 .id(type_ident).id(variant_ident).build()
                 .with_pats(
@@ -590,18 +590,18 @@ fn impl_enum_serialize_arm(
                                 cx.bug("struct variant has unnamed fields")
                             }
                         };
-                        
+
                         (name, builder.pat().ref_id(field_name))
                     })
                 )
                 .build();
-            
+
             let ser_fields = builder.block().with_stmts(field_names.iter().map(|field| {
                 quote_stmt!(cx,
                     try!(writer.write_generic($field));
                 ).unwrap()
             })).build();
-            
+
             quote_arm!(cx,
                 $pat => {
                     $ser_fields
@@ -628,7 +628,7 @@ fn impl_enum_deserialize(
             )
         })
         .collect();
-        
+
     quote_expr!(cx,
         match id.0 {
             $arms
@@ -645,7 +645,7 @@ fn impl_enum_deserialize_arm(
     variant: &ast::Variant,
 ) -> ast::Arm {
     let variant_ident = variant.node.name;
-    
+
     let var_id = variant.node.attrs.iter().filter_map(|attr| {
         if let ast::MetaList(ref n, ref list) = attr.node.value.node {
             if &**n == "tl_id" {
@@ -657,7 +657,7 @@ fn impl_enum_deserialize_arm(
         }
         None
     }).next().unwrap();
-    
+
     match variant.node.data {
         ast::VariantData::Unit(_) => {
             let var = builder.path().id(type_ident).id(variant_ident).build();
@@ -671,7 +671,7 @@ fn impl_enum_deserialize_arm(
             let field_names: Vec<ast::Ident> = (0..fields.len())
                 .map(|i| builder.id(format!("__field{}", i)))
                 .collect();
-                
+
             let read_ops = builder.expr().block().with_stmts(
                 field_names.iter()
                 .map(|field| {
@@ -680,18 +680,18 @@ fn impl_enum_deserialize_arm(
                     ).unwrap()
                 })
             );
-            
+
             let pat = builder.expr().call()
                 .path().id(type_ident).id(variant_ident).build()
                 .with_args(field_names.iter().map(|field_name| {
                     builder.expr().id(field_name)
                 }))
                 .build();
-                
+
             let result = read_ops.expr().build(quote_expr!(cx,
                 Ok($pat)
             ));
-            
+
             quote_arm!(cx,
                 $var_id => {
                     $result
@@ -702,7 +702,7 @@ fn impl_enum_deserialize_arm(
             let field_names: Vec<ast::Ident> = (0..fields.len())
                 .map(|i| builder.id(format!("__field{}", i)))
                 .collect();
-                
+
             let read_ops = builder.expr().block().with_stmts(
                 field_names.iter()
                 .map(|field| {
@@ -711,7 +711,7 @@ fn impl_enum_deserialize_arm(
                     ).unwrap()
                 })
             );
-            
+
             let pat = builder.expr().struct_()
                 .id(type_ident).id(variant_ident).build()
                 .with_id_exprs(fields.iter().zip(&field_names).map(|(field, field_name)| {
@@ -721,15 +721,15 @@ fn impl_enum_deserialize_arm(
                             cx.bug("struct variant has unnamed fields")
                         }
                     };
-                    
+
                     (name, builder.expr().id(field_name))
                 }))
                 .build();
-                
+
             let result = read_ops.expr().build(quote_expr!(cx,
                 Ok($pat)
             ));
-            
+
             quote_arm!(cx,
                 $var_id => {
                     $result
