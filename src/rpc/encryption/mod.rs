@@ -4,9 +4,9 @@ use crypto::digest::Digest;
 use crypto::sha1::Sha1;
 use crypto::aessafe::{AesSafe256Encryptor, AesSafe256Decryptor};
 use byteorder::{ByteOrder, LittleEndian, WriteBytesExt, ReadBytesExt};
-use num::BigUint;
 
 pub mod ige;
+pub mod bignum;
 
 type MsgKey = [u8; 16];
 const PRELUDE_LEN: usize = 32;
@@ -214,26 +214,26 @@ fn make_client_auth_key(session: &Session, msg_key: &[u8; 16]) -> AuthKey {
 #[derive(Debug)]
 pub struct FactorizationFailure;
 
-pub fn decompose_pq(pq: &BigUint) -> Result<(BigUint, BigUint), FactorizationFailure> {
-    use num::{BigInt, Integer, One, Signed};
-    use num::bigint::Sign;
-    let one: BigUint = One::one();
-    let two = &one + &one;
-    let g = |x: &BigUint| -> BigUint {
-        (x * x + &one) % pq
-    };
-    let mut x = two.clone();
-    let mut y = two.clone();
-    let mut d = one.clone();
-    while d == one {
-        x = g(&x);
-        y = g(&g(&y));
-        let delta = BigInt::from_biguint(Sign::Plus, x.clone()) - BigInt::from_biguint(Sign::Plus, y.clone());
-        d = delta.abs().to_biguint().unwrap().gcd(&pq);
-    }
-    if &d == pq {
-        Err(FactorizationFailure)
-    } else {
-        Ok((pq / &d, d))
+fn isqrt(x: u64) -> u64 {
+    let mut ret = (x as f64).sqrt().trunc() as u64;
+    while ret * ret > x { ret -= 1; }
+    while ret * ret < x { ret += 1; }
+    ret
+}
+
+pub fn decompose_pq(pq: u64) -> Result<(u32, u32), FactorizationFailure> {
+    let mut pq_sqrt = isqrt(pq);
+    loop {
+        let y_sqr = pq_sqrt * pq_sqrt - pq;
+        if y_sqr == 0 { return Err(FactorizationFailure) }
+        let y = isqrt(y_sqr);
+        if y + pq_sqrt >= pq { return Err(FactorizationFailure) }
+        if y * y != y_sqr {
+            pq_sqrt += 1;
+            continue;
+        }
+        let p = (pq_sqrt + y) as u32;
+        let q = (if pq_sqrt > y { pq_sqrt - y } else { y - pq_sqrt }) as u32;
+        return Ok(if p > q {(q, p)} else {(p, q)});
     }
 }
