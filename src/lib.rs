@@ -4,8 +4,7 @@ extern crate byteorder;
 extern crate chrono;
 extern crate crypto;
 extern crate crc;
-extern crate modexp;
-extern crate num;
+extern crate openssl;
 #[macro_use] extern crate tl_macros;
 
 pub mod tl;

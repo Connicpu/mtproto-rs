@@ -9,12 +9,7 @@ byteorder = "0.4"
 chrono = "0.2"
 rust-crypto = "0.2"
 crc = "1.2"
-modexp = "0.2.2"
-
-[dependencies.num]
-version = "0.1"
-default-features = false
-features = ["bigint"]
+openssl = "0.9.6"
 
 [dependencies.tl_macros]
 path = "tl_macros"

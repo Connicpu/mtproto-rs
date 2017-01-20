@@ -5,8 +5,8 @@ use crypto::sha1::Sha1;
 use crypto::aessafe::{AesSafe256Encryptor, AesSafe256Decryptor};
 use byteorder::{ByteOrder, LittleEndian, WriteBytesExt, ReadBytesExt};
 
+pub mod asymm;
 pub mod ige;
-pub mod bignum;
 
 type MsgKey = [u8; 16];
 const PRELUDE_LEN: usize = 32;
