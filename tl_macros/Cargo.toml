@@ -2,14 +2,10 @@
 name = "tl_macros"
 version = "0.1.0"
 authors = ["Connor Hilarides <connorcpu@live.com>"]
-build = "build.rs"
 
 [dependencies]
-syntex = "0.25"
-syntex_syntax = "0.25"
-aster = { version = "0.9", features = ["with-syntex"] }
-quasi = { version = "0.3.11", features = ["with-syntex"] }
+syn = "*"
+quote = "*"
 
-[build-dependencies]
-syntex = "0.25"
-quasi_codegen = { version = "0.3.11", features = ["with-syntex"] }
+[lib]
+proc-macro = true

@@ -2,7 +2,6 @@
 name = "mtproto"
 version = "0.1.0"
 authors = ["Connor Hilarides <connorcpu@live.com>"]
-build = "build.rs"
 license = "MIT/Apache-2.0"
 
 [dependencies]
@@ -16,9 +15,8 @@ version = "0.1"
 default-features = false
 features = ["bigint"]
 
+[dependencies.tl_macros]
+path = "tl_macros"
+
 [dev-dependencies]
 rand = "0.3"
-
-[build-dependencies]
-syntex = "0.25"
-tl_macros = { path = "tl_macros" }

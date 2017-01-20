@@ -4,6 +4,7 @@ use tl::{self, Type};
 use tl::parsing::{ConstructorId, ReadContext, WriteContext};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
+#[derive(Debug)]
 pub struct Vector<T: Type> {
     pub elements: Vec<T>,
 }

@@ -78,6 +78,43 @@ impl_tl_primitive! { u64, read_u64, write_u64 }
 impl_tl_primitive! { f32, read_f32, write_f32 }
 impl_tl_primitive! { f64, read_f64, write_f64 }
 
+macro_rules! impl_tl_tuple {
+    ($($i:ident : $t:ident),*) => {
+        impl<
+            $( $t : Type ),*
+            > Type for ($($t),*)
+        {
+            fn bare_type() -> bool {
+                true
+            }
+
+            fn type_id(&self) -> Option<ConstructorId> {
+                None
+            }
+
+            fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> Result<()> {
+                let &($(ref $i),*) = self;
+                $(
+                    try!(writer.write_bare($i));
+                )*
+                Ok(())
+            }
+
+            fn deserialize<R: Read>(reader: &mut ReadContext<R>) -> Result<Self> {
+                Ok(( $(
+                    try!(reader.read_bare::<$t>()),
+                )* ))
+            }
+
+            fn deserialize_boxed<R: Read>(_: ConstructorId, _: &mut ReadContext<R>) -> Result<Self> {
+                Err(Error::PrimitiveAsPolymorphic)
+            }
+        }
+    };
+}
+
+impl_tl_tuple! { a: A, b: B }
+
 const VEC_TYPE_ID: ConstructorId = ConstructorId(0x1cb5c415);
 
 impl<'a, T: Type> Type for &'a [T] {
@@ -159,38 +196,17 @@ impl<'a> Type for &'a [u8] {
         assert!(len & 0xFF000000 == 0); // len fits in a 24-bit integer
 
         // Writing string length is WAT
-        let mut to_write = *self;
-        let first_word = if len <= 253 {
-            let mut ret = len as u32;
-            for (e, &b) in self.iter().take(3).enumerate() {
-                ret |= (b as u32) << ((e + 1) * 8);
-            }
-            if len > 3 {
-                to_write = &to_write[3..];
-            } else {
-                to_write = b"";
-            }
-            ret
+        if len <= 253 {
+            try!(writer.write_u8(len as u8));
         } else {
-            254 | ((len as u32) << 8)
-        };
-        writer.write_u32::<::byteorder::BigEndian>(first_word)?;
-        println!("fw {:x} {:?}", first_word, to_write);
+            let mut buf = [254; 5];
+            LittleEndian::write_u32(&mut buf[1..], len as u32);
+            try!(writer.write_all(&buf[0..4]));
+        }
 
         // Write the actual string and padding
-        if to_write.len() > 4 {
-            let write_len = to_write.len() & !3;
-            writer.write_all(&to_write[..write_len])?;
-            to_write = &to_write[write_len..];
-        }
-        if !to_write.is_empty() {
-            let mut last_word = 0u32;
-            for (e, &b) in to_write.into_iter().enumerate() {
-                last_word |= (b as u32) << (e * 8);
-            }
-            writer.write_u32::<::byteorder::BigEndian>(last_word)?;
-            println!("lw {:x} {:?}", last_word, to_write);
-        }
+        try!(writer.write_all(*self));
+        try!(writer.pad(4));
 
         Ok(())
     }
