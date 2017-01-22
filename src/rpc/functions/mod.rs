@@ -155,3 +155,9 @@ pub mod help {
     #[tl_id(_c4f9186b)]
     pub struct GetConfig;
 }
+
+#[derive(TLType)]
+#[tl_id(_b921bd04)]
+pub struct GetFutureSalts {
+    pub num: i32,
+}

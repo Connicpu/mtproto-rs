@@ -3,6 +3,8 @@ use std::io;
 use byteorder::{LittleEndian, ByteOrder};
 use openssl::{bn, hash, rsa};
 
+use super::{AuthKey, Padding, sha1_and_or_pad};
+
 pub type Result<T> = ::std::result::Result<T, ::openssl::error::ErrorStack>;
 
 #[derive(Debug)]
@@ -65,18 +67,15 @@ impl RsaPublicKey {
     }
 
     pub fn encrypt(&self, input: &[u8]) -> Result<Vec<u8>> {
-        if input.len() != 255 {
-            panic!("bad input length: {}", input.len());
-        }
-        let mut real_input = vec![0; 256];
-        (&mut real_input[1..]).copy_from_slice(input);
+        let mut input = sha1_and_or_pad(input, true, Padding::Total255)?;
+        input.insert(0, 0);
         let mut output = vec![0; 256];
-        self.0.public_encrypt(&real_input, &mut output, rsa::NO_PADDING)?;
+        self.0.public_encrypt(&input, &mut output, rsa::NO_PADDING)?;
         Ok(output)
     }
 }
 
-pub fn calculate_auth_key(g: u32, dh_prime: &[u8], g_a: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
+pub fn calculate_auth_key(g: u32, dh_prime: &[u8], g_a: &[u8]) -> Result<(AuthKey, Vec<u8>)> {
     let mut ctx = bn::BigNumContext::new()?;
     let g = bn::BigNum::from_u32(g)?;
     let dh_prime = bn::BigNum::from_slice(dh_prime)?;
@@ -87,5 +86,6 @@ pub fn calculate_auth_key(g: u32, dh_prime: &[u8], g_a: &[u8]) -> Result<(Vec<u8
     g_b.mod_exp(&g, &b, &dh_prime, &mut ctx)?;
     let mut auth_key = bn::BigNum::new()?;
     auth_key.mod_exp(&g_a, &b, &dh_prime, &mut ctx)?;
-    Ok((g_b.to_vec(), auth_key.to_vec()))
+    let auth_key = AuthKey::new(&auth_key.to_vec())?;
+    Ok((auth_key, g_b.to_vec()))
 }
