@@ -1,10 +1,15 @@
 use std::io;
 
 use chrono::{UTC, Timelike};
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt, self};
+use byteorder::{LittleEndian, ByteOrder, ReadBytesExt, WriteBytesExt, self};
+use openssl::hash;
 
 pub mod encryption;
 pub mod functions;
+
+use self::functions::authz::Nonce;
+
+pub type OpensslResult<T> = Result<T, ::openssl::error::ErrorStack>;
 
 pub struct Session {
     session_id: u64,
@@ -13,14 +18,20 @@ pub struct Session {
     auth_key: Option<encryption::AuthKey>,
 }
 
-#[derive(Debug)]
-pub struct DecryptedMessage {
-    server_salt: u64,
-    session_id: u64,
-    message_id: u64,
-    seq_no: u32,
-    pub payload: Vec<u8>,
+#[derive(Debug, Clone)]
+pub struct OutboundMessage {
+    pub message_id: u64,
+    pub message: Vec<u8>,
 }
+
+#[derive(Debug, Clone)]
+pub struct InboundPayload {
+    pub message_id: u64,
+    pub payload: Vec<u8>,
+    pub was_encrypted: bool,
+}
+
+pub type InboundMessage = Result<InboundPayload, i32>;
 
 impl Session {
     pub fn new(session_id: u64) -> Session {
@@ -50,28 +61,75 @@ impl Session {
         (timestamp << 32) | (nano & !3)
     }
 
-    pub fn encrypted_payload(&mut self, payload: &[u8]) -> Result<Vec<u8>, ::openssl::error::ErrorStack> {
+    pub fn encrypted_payload(&mut self, payload: &[u8]) -> OpensslResult<OutboundMessage> {
         let key = self.auth_key.unwrap();
-        let mut message = vec![];
-        message.write_u64::<LittleEndian>(self.server_salt).unwrap();
-        message.write_u64::<LittleEndian>(self.session_id).unwrap();
-        message.write_u64::<LittleEndian>(self.next_message_id()).unwrap();
-        message.write_u32::<LittleEndian>(self.next_content_seq_no() | 1).unwrap();
-        message.write_u32::<LittleEndian>(payload.len() as u32).unwrap();
-        message.extend(payload);
-        key.encrypt_message(&message)
+        let mut ret = OutboundMessage {
+            message_id: self.next_message_id(),
+            message: vec![],
+        };
+        {
+            let message = &mut ret.message;
+            message.write_u64::<LittleEndian>(self.server_salt).unwrap();
+            message.write_u64::<LittleEndian>(self.session_id).unwrap();
+            message.write_u64::<LittleEndian>(ret.message_id).unwrap();
+            message.write_u32::<LittleEndian>(self.next_content_seq_no() | 1).unwrap();
+            message.write_u32::<LittleEndian>(payload.len() as u32).unwrap();
+            message.extend(payload);
+        }
+        ret.message = key.encrypt_message(&ret.message)?;
+        Ok(ret)
     }
 
-    pub fn plain_payload(&mut self, payload: &[u8]) -> Vec<u8> {
-        let mut message = vec![];
-        message.write_u64::<LittleEndian>(0).unwrap();
-        message.write_u64::<LittleEndian>(self.next_message_id()).unwrap();
-        message.write_u32::<LittleEndian>(payload.len() as u32).unwrap();
-        message.extend(payload);
-        message
+    pub fn plain_payload(&mut self, payload: &[u8]) -> OutboundMessage {
+        let mut ret = OutboundMessage {
+            message_id: self.next_message_id(),
+            message: vec![],
+        };
+        {
+            let message = &mut ret.message;
+            message.write_u64::<LittleEndian>(0).unwrap();
+            message.write_u64::<LittleEndian>(ret.message_id).unwrap();
+            message.write_u32::<LittleEndian>(payload.len() as u32).unwrap();
+            message.extend(payload);
+        }
+        ret
     }
 
-    pub fn decrypt_message(&self, message: &[u8]) -> Result<DecryptedMessage, ::openssl::error::ErrorStack> {
+    pub fn assemble_payload(&mut self, payload: &[u8], encrypt: bool) -> OpensslResult<OutboundMessage> {
+        if encrypt {
+            self.encrypted_payload(payload)
+        } else {
+            Ok(self.plain_payload(payload))
+        }
+    }
+
+    pub fn process_message(&self, message: &[u8]) -> OpensslResult<InboundMessage> {
+        if message.len() == 4 {
+            return Ok(Err(LittleEndian::read_i32(&message)));
+        } else if message.len() < 8 {
+            panic!("bad message");
+        }
+
+        let mut cursor = io::Cursor::new(message);
+        let auth_key_id = cursor.read_u64::<LittleEndian>().unwrap();
+        if auth_key_id != 0 {
+            cursor.into_inner();
+            return self.decrypt_message(message);
+        }
+
+        let message_id = cursor.read_u64::<LittleEndian>().unwrap();
+        let len = cursor.read_u32::<LittleEndian>().unwrap() as usize;
+        let pos = cursor.position() as usize;
+        cursor.into_inner();
+        let payload = &message[pos..pos+len];
+        Ok(Ok(InboundPayload {
+            message_id: message_id,
+            payload: payload.into(),
+            was_encrypted: false,
+        }))
+    }
+
+    fn decrypt_message(&self, message: &[u8]) -> OpensslResult<InboundMessage> {
         let decrypted = self.auth_key.unwrap().decrypt_message(message)?;
         let mut cursor = io::Cursor::new(&decrypted[..]);
         let server_salt = cursor.read_u64::<LittleEndian>().unwrap();
@@ -82,16 +140,36 @@ impl Session {
         let pos = cursor.position() as usize;
         cursor.into_inner();
         let payload = &decrypted[pos..pos+len];
-        //let computed_message_hash = sha1_bytes(&[&ret])?;
-        //let computed_message_key = &computed_message_hash[4..20];
-        Ok(DecryptedMessage {
-            server_salt: server_salt,
-            session_id: session_id,
+        let computed_message_hash = sha1_bytes(&[&decrypted[..pos+len]])?;
+        let computed_message_key = &computed_message_hash[4..20];
+        assert!(&message[8..24] == computed_message_key);
+        assert!(server_salt == self.server_salt);
+        assert!(session_id == self.session_id);
+        Ok(Ok(InboundPayload {
             message_id: message_id,
-            seq_no: seq_no,
             payload: payload.into(),
-        })
+            was_encrypted: true,
+        }))
     }
+}
+
+fn sha1_bytes(parts: &[&[u8]]) -> OpensslResult<Vec<u8>> {
+    let mut hasher = hash::Hasher::new(hash::MessageDigest::sha1())?;
+    for part in parts {
+        hasher.update(part)?;
+    }
+    hasher.finish()
+}
+
+fn sha1_nonces(nonces: &[Nonce]) -> OpensslResult<Vec<u8>> {
+    let mut hasher = hash::Hasher::new(hash::MessageDigest::sha1())?;
+    for nonce in nonces {
+        let mut tmp = [0u8; 16];
+        LittleEndian::write_u64(&mut tmp[..8], nonce.0);
+        LittleEndian::write_u64(&mut tmp[8..], nonce.1);
+        hasher.update(&tmp)?;
+    }
+    hasher.finish()
 }
 
 pub type RpcRes<T> = Result<T, RpcError>;

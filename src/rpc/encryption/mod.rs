@@ -1,9 +1,10 @@
 use std::io::{Cursor, Write};
 
 use byteorder::{LittleEndian, ByteOrder, WriteBytesExt};
-use openssl::{aes, hash, symm};
+use openssl::{aes, symm};
 
 use rpc::functions::authz::{Nonce, PQInnerData};
+use rpc::{sha1_bytes, sha1_nonces};
 
 pub mod asymm;
 
@@ -75,25 +76,6 @@ impl AesParams {
         set_slice_parts(&mut ret.iv, &[&sha1_b[12..], &sha1_c, &tmp[..4]]);
         Ok(ret)
     }
-}
-
-fn sha1_bytes(parts: &[&[u8]]) -> Result<Vec<u8>> {
-    let mut hasher = hash::Hasher::new(hash::MessageDigest::sha1())?;
-    for part in parts {
-        hasher.update(part)?;
-    }
-    hasher.finish()
-}
-
-fn sha1_nonces(nonces: &[Nonce]) -> Result<Vec<u8>> {
-    let mut hasher = hash::Hasher::new(hash::MessageDigest::sha1())?;
-    for nonce in nonces {
-        let mut tmp = [0u8; 16];
-        LittleEndian::write_u64(&mut tmp[..8], nonce.0);
-        LittleEndian::write_u64(&mut tmp[8..], nonce.1);
-        hasher.update(&tmp)?;
-    }
-    hasher.finish()
 }
 
 fn set_slice_parts(result: &mut [u8], parts: &[&[u8]]) {
@@ -187,32 +169,5 @@ impl AuthKey {
         let message_key = &message[8..24];
         let aes = self.generate_message_aes_params(message_key, symm::Mode::Decrypt)?;
         aes.ige_decrypt(&message[24..])
-    }
-}
-
-#[derive(Debug)]
-pub struct FactorizationFailure;
-
-fn isqrt(x: u64) -> u64 {
-    let mut ret = (x as f64).sqrt().trunc() as u64;
-    while ret * ret > x { ret -= 1; }
-    while ret * ret < x { ret += 1; }
-    ret
-}
-
-pub fn decompose_pq(pq: u64) -> ::std::result::Result<(u32, u32), FactorizationFailure> {
-    let mut pq_sqrt = isqrt(pq);
-    loop {
-        let y_sqr = pq_sqrt * pq_sqrt - pq;
-        if y_sqr == 0 { return Err(FactorizationFailure) }
-        let y = isqrt(y_sqr);
-        if y + pq_sqrt >= pq { return Err(FactorizationFailure) }
-        if y * y != y_sqr {
-            pq_sqrt += 1;
-            continue;
-        }
-        let p = (pq_sqrt + y) as u32;
-        let q = (if pq_sqrt > y { pq_sqrt - y } else { y - pq_sqrt }) as u32;
-        return Ok(if p > q {(q, p)} else {(p, q)});
     }
 }

@@ -89,3 +89,30 @@ pub fn calculate_auth_key(g: u32, dh_prime: &[u8], g_a: &[u8]) -> Result<(AuthKe
     let auth_key = AuthKey::new(&auth_key.to_vec())?;
     Ok((auth_key, g_b.to_vec()))
 }
+
+#[derive(Debug)]
+pub struct FactorizationFailure;
+
+fn isqrt(x: u64) -> u64 {
+    let mut ret = (x as f64).sqrt().trunc() as u64;
+    while ret * ret > x { ret -= 1; }
+    while ret * ret < x { ret += 1; }
+    ret
+}
+
+pub fn decompose_pq(pq: u64) -> ::std::result::Result<(u32, u32), FactorizationFailure> {
+    let mut pq_sqrt = isqrt(pq);
+    loop {
+        let y_sqr = pq_sqrt * pq_sqrt - pq;
+        if y_sqr == 0 { return Err(FactorizationFailure) }
+        let y = isqrt(y_sqr);
+        if y + pq_sqrt >= pq { return Err(FactorizationFailure) }
+        if y * y != y_sqr {
+            pq_sqrt += 1;
+            continue;
+        }
+        let p = (pq_sqrt + y) as u32;
+        let q = (if pq_sqrt > y { pq_sqrt - y } else { y - pq_sqrt }) as u32;
+        return Ok(if p > q {(q, p)} else {(p, q)});
+    }
+}
