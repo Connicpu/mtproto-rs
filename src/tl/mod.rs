@@ -1,6 +1,6 @@
 use std;
 use std::io::{Read, Write};
-use tl::parsing::{ConstructorId, ReadContext, WriteContext};
+use tl::parsing::{ConstructorId, Reader, WriteContext};
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 
 pub use self::error::{Error, Result};
@@ -30,8 +30,8 @@ pub trait Type: Sized {
     fn bare_type() -> bool;
     fn type_id(&self) -> Option<ConstructorId>;
     fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> Result<()>;
-    fn deserialize<R: Read>(reader: &mut ReadContext<R>) -> Result<Self>;
-    fn deserialize_boxed<R: Read>(id: ConstructorId, reader: &mut ReadContext<R>) -> Result<Self>;
+    fn deserialize<R: Reader>(reader: &mut R) -> Result<Self>;
+    fn deserialize_boxed<R: Reader>(id: ConstructorId, reader: &mut R) -> Result<Self>;
 }
 
 trait ReadHelpers {
@@ -59,12 +59,12 @@ macro_rules! impl_tl_primitive {
                 Ok(())
             }
 
-            fn deserialize<R: Read>(reader: &mut ReadContext<R>) -> Result<Self> {
+            fn deserialize<R: Reader>(reader: &mut R) -> Result<Self> {
                 use byteorder::{LittleEndian, ReadBytesExt};
                 Ok(try!(reader.$read::<LittleEndian>()))
             }
 
-            fn deserialize_boxed<R: Read>(_: ConstructorId, _: &mut ReadContext<R>) -> Result<Self> {
+            fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
                 Err(Error::PrimitiveAsPolymorphic)
             }
         }
@@ -100,13 +100,13 @@ macro_rules! impl_tl_tuple {
                 Ok(())
             }
 
-            fn deserialize<R: Read>(reader: &mut ReadContext<R>) -> Result<Self> {
+            fn deserialize<R: Reader>(reader: &mut R) -> Result<Self> {
                 Ok(( $(
                     try!(reader.read_bare::<$t>()),
                 )* ))
             }
 
-            fn deserialize_boxed<R: Read>(_: ConstructorId, _: &mut ReadContext<R>) -> Result<Self> {
+            fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
                 Err(Error::PrimitiveAsPolymorphic)
             }
         }
@@ -137,11 +137,11 @@ impl<'a, T: Type> Type for &'a [T] {
         Ok(())
     }
 
-    fn deserialize<R: Read>(_: &mut ReadContext<R>) -> Result<Self> {
+    fn deserialize<R: Reader>(_: &mut R) -> Result<Self> {
         Err(Error::ReceivedSendType)
     }
 
-    fn deserialize_boxed<R: Read>(_: ConstructorId, _: &mut ReadContext<R>) -> Result<Self> {
+    fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
         Err(Error::ReceivedSendType)
     }
 }
@@ -161,7 +161,7 @@ impl<T: Type> Type for Vec<T> {
         (&self[..]).serialize(writer)
     }
 
-    fn deserialize<R: Read>(reader: &mut ReadContext<R>) -> Result<Self> {
+    fn deserialize<R: Reader>(reader: &mut R) -> Result<Self> {
         let mut vec = vec![];
         let count = try!(reader.read_u32::<LittleEndian>()) as usize;
         vec.reserve(count);
@@ -171,7 +171,7 @@ impl<T: Type> Type for Vec<T> {
         Ok(vec)
     }
 
-    fn deserialize_boxed<R: Read>(id: ConstructorId, reader: &mut ReadContext<R>) -> Result<Self> {
+    fn deserialize_boxed<R: Reader>(id: ConstructorId, reader: &mut R) -> Result<Self> {
         if id != VEC_TYPE_ID {
             return Err(Error::InvalidData);
         }
@@ -211,11 +211,11 @@ impl<'a> Type for &'a [u8] {
         Ok(())
     }
 
-    fn deserialize<R: Read>(_: &mut ReadContext<R>) -> Result<Self> {
+    fn deserialize<R: Reader>(_: &mut R) -> Result<Self> {
         Err(Error::ReceivedSendType)
     }
 
-    fn deserialize_boxed<R: Read>(_: ConstructorId, _: &mut ReadContext<R>) -> Result<Self> {
+    fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
         Err(Error::ReceivedSendType)
     }
 }
@@ -235,7 +235,7 @@ impl Type for Vec<u8> {
         (&self[..]).serialize(writer)
     }
 
-    fn deserialize<R: Read>(reader: &mut ReadContext<R>) -> Result<Self> {
+    fn deserialize<R: Reader>(reader: &mut R) -> Result<Self> {
         let low_len = try!(reader.read_u8());
         let len = if low_len != 254 {
             low_len as usize
@@ -247,12 +247,12 @@ impl Type for Vec<u8> {
 
         let mut bytes = vec![0; len];
         try!(reader.read_exact(&mut bytes));
-        try!(reader.align(4));
+        //try!(reader.align(4));
 
         Ok(bytes)
     }
 
-    fn deserialize_boxed<R: Read>(_: ConstructorId, _: &mut ReadContext<R>) -> Result<Self> {
+    fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
         Err(Error::PrimitiveAsPolymorphic)
     }
 }
@@ -272,12 +272,12 @@ impl Type for String {
         (&self[..]).serialize(writer)
     }
 
-    fn deserialize<R: Read>(reader: &mut ReadContext<R>) -> Result<Self> {
+    fn deserialize<R: Reader>(reader: &mut R) -> Result<Self> {
         let bytes = try!(reader.read_bare());
         Ok(try!(String::from_utf8(bytes)))
     }
 
-    fn deserialize_boxed<R: Read>(_: ConstructorId, _: &mut ReadContext<R>) -> Result<Self> {
+    fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
         Err(Error::PrimitiveAsPolymorphic)
     }
 }
@@ -298,11 +298,11 @@ impl<'a> Type for &'a str {
         Ok(())
     }
 
-    fn deserialize<R: Read>(_: &mut ReadContext<R>) -> Result<Self> {
+    fn deserialize<R: Reader>(_: &mut R) -> Result<Self> {
         Err(Error::ReceivedSendType)
     }
 
-    fn deserialize_boxed<R: Read>(_: ConstructorId, _: &mut ReadContext<R>) -> Result<Self> {
+    fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
         Err(Error::ReceivedSendType)
     }
 }
@@ -322,11 +322,33 @@ impl Type for bool {
         Bool(*self).serialize(writer)
     }
 
-    fn deserialize<R: Read>(reader: &mut ReadContext<R>) -> Result<Self> {
+    fn deserialize<R: Reader>(reader: &mut R) -> Result<Self> {
         Ok(try!(Bool::deserialize(reader)).0)
     }
 
-    fn deserialize_boxed<R: Read>(id: ConstructorId, reader: &mut ReadContext<R>) -> Result<Self> {
+    fn deserialize_boxed<R: Reader>(id: ConstructorId, reader: &mut R) -> Result<Self> {
         Ok(try!(Bool::deserialize_boxed(id, reader)).0)
+    }
+}
+
+impl Type for () {
+    fn bare_type() -> bool {
+        true
+    }
+
+    fn type_id(&self) -> Option<ConstructorId> {
+        None
+    }
+
+    fn serialize<W: Write>(&self, _: &mut WriteContext<W>) -> Result<()> {
+        Ok(())
+    }
+
+    fn deserialize<R: Reader>(_: &mut R) -> Result<Self> {
+        Ok(())
+    }
+
+    fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
+        Ok(())
     }
 }

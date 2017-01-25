@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 use tl::{self, Type};
-use tl::parsing::{ConstructorId, ReadContext, WriteContext};
+use tl::parsing::{ConstructorId, Reader, WriteContext};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Bool(pub bool);
@@ -27,11 +27,11 @@ impl Type for Bool {
         Ok(())
     }
 
-    fn deserialize<R: Read>(_: &mut ReadContext<R>) -> tl::Result<Self> {
+    fn deserialize<R: Reader>(_: &mut R) -> tl::Result<Self> {
         Err(tl::Error::BoxedAsBare)
     }
 
-    fn deserialize_boxed<R: Read>(id: ConstructorId, _: &mut ReadContext<R>) -> tl::Result<Self> {
+    fn deserialize_boxed<R: Reader>(id: ConstructorId, _: &mut R) -> tl::Result<Self> {
         match id {
             Bool::TRUE => Ok(Bool(true)),
             Bool::FALSE => Ok(Bool(false)),
@@ -39,4 +39,3 @@ impl Type for Bool {
         }
     }
 }
-

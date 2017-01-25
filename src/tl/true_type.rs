@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 use tl::{self, Type};
-use tl::parsing::{ConstructorId, ReadContext, WriteContext};
+use tl::parsing::{ConstructorId, Reader, WriteContext};
 
 #[derive(Copy, Clone, Debug)]
 pub struct True;
@@ -22,11 +22,11 @@ impl Type for True {
         Ok(())
     }
 
-    fn deserialize<R: Read>(_: &mut ReadContext<R>) -> tl::Result<Self> {
+    fn deserialize<R: Reader>(_: &mut R) -> tl::Result<Self> {
         Err(tl::Error::BoxedAsBare)
     }
 
-    fn deserialize_boxed<R: Read>(id: ConstructorId, _: &mut ReadContext<R>) -> tl::Result<Self> {
+    fn deserialize_boxed<R: Reader>(id: ConstructorId, _: &mut R) -> tl::Result<Self> {
         match id {
             True::SIGNATURE => Ok(True),
             _ => Err(tl::Error::InvalidData),

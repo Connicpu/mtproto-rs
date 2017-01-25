@@ -1,7 +1,7 @@
 use std;
 use std::io::{Read, Write};
 use tl::{self, Type};
-use tl::parsing::{ConstructorId, ReadContext, WriteContext};
+use tl::parsing::{ConstructorId, Reader, WriteContext};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 #[derive(Debug)]
@@ -42,7 +42,7 @@ impl<T: Type> Type for Vector<T> {
         SendSlice::from_elements(&self.elements).serialize(writer)
     }
 
-    fn deserialize<R: Read>(reader: &mut ReadContext<R>) -> tl::Result<Self> {
+    fn deserialize<R: Reader>(reader: &mut R) -> tl::Result<Self> {
         let mut vec = Vector { elements: vec![] };
         let count = try!(reader.read_u32::<LittleEndian>()) as usize;
         for _ in 0..count {
@@ -51,7 +51,7 @@ impl<T: Type> Type for Vector<T> {
         Ok(vec)
     }
 
-    fn deserialize_boxed<R: Read>(id: ConstructorId, reader: &mut ReadContext<R>) -> tl::Result<Self> {
+    fn deserialize_boxed<R: Reader>(id: ConstructorId, reader: &mut R) -> tl::Result<Self> {
         if id != TYPE_ID {
             return Err(tl::Error::InvalidData);
         }
@@ -86,11 +86,11 @@ impl<'a, T: Type + 'a> Type for SendSlice<'a, T> {
         Ok(())
     }
 
-    fn deserialize<R: Read>(_: &mut ReadContext<R>) -> tl::Result<Self> {
+    fn deserialize<R: Reader>(_: &mut R) -> tl::Result<Self> {
         Err(tl::Error::ReceivedSendType)
     }
 
-    fn deserialize_boxed<R: Read>(_: ConstructorId, _: &mut ReadContext<R>) -> tl::Result<Self> {
+    fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> tl::Result<Self> {
         Err(tl::Error::ReceivedSendType)
     }
 }

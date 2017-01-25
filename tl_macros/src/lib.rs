@@ -2,9 +2,11 @@
 
 extern crate proc_macro;
 extern crate syn;
+#[macro_use] extern crate lazy_static;
 #[macro_use] extern crate quote;
 
 use proc_macro::TokenStream;
+use std::sync::Mutex;
 use std::iter;
 
 struct Impls {
@@ -27,6 +29,32 @@ fn add_any_bounds(generics: &syn::Generics) -> syn::Generics {
         ));
     }
     ret
+}
+
+lazy_static! {
+    static ref TYPE_COUNT: Mutex<usize> = Mutex::new(0);
+}
+
+fn increment_type_counts() -> (syn::Ident, syn::Ident) {
+    let mut handle = TYPE_COUNT.lock().unwrap();
+    *handle += 1;
+    (format!("__register_{}", *handle).into(),
+     format!("__register_{}", *handle + 1).into())
+}
+
+fn next_registration(body: quote::Tokens) -> quote::Tokens {
+    let (cur, next) = increment_type_counts();
+    quote! {
+
+        impl ::AllDynamicTypes {
+            #[inline(always)]
+            pub fn #cur<R: ::tl::parsing::Reader>(cstore: &mut ::tl::dynamic::TLCtorMap<R>) {
+                #body
+                ::AllDynamicTypes::#next(cstore)
+            }
+        }
+
+    }
 }
 
 #[proc_macro_derive(TLType, attributes(tl_id))]
@@ -68,22 +96,17 @@ pub fn expand_tltype(input: TokenStream) -> TokenStream {
                 #serialize
             }
 
-            fn deserialize<R: ::std::io::Read>(
-                reader: &mut ::tl::parsing::ReadContext<R>
+            fn deserialize<R: ::tl::parsing::Reader>(
+                reader: &mut R
             ) -> ::tl::Result<Self> {
                 #deserialize
             }
 
-            fn deserialize_boxed<R: ::std::io::Read>(
+            fn deserialize_boxed<R: ::tl::parsing::Reader>(
                 id: ::tl::parsing::ConstructorId,
-                reader: &mut ::tl::parsing::ReadContext<R>
+                reader: &mut R
             ) -> ::tl::Result<Self> {
                 #deserialize_boxed
-            }
-        }
-
-        impl #impl_generics ::tl::dynamic::TLDynamic for #ident #ty_generics #where_clause {
-            fn register_ctors(cstore: &mut ::tl::dynamic::ClassStore) {
             }
         }
 
@@ -152,17 +175,28 @@ fn ty_turbofish(ty: &syn::Ident, ty_generics: &syn::TyGenerics) -> quote::Tokens
 fn impl_item_struct(tl_id: u32, ty: &syn::Ident, generics: &syn::Generics, body: &syn::VariantData) -> Impls {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let ty_turbofish = ty_turbofish(ty, &ty_generics);
+    let boxes = if generics.ty_params.is_empty() {
+        quote! {}
+    } else {
+        let boxes = (0..generics.ty_params.len())
+            .into_iter()
+            .map(|_| quote! { Box<::tl::dynamic::TLObject> });
+        quote! { <#( #boxes ),*> }
+    };
 
     let type_id = quote! {
         #ty_turbofish::TYPE_ID
     };
-    let extra_items = vec![quote! {
+    let mut extra_items = vec![quote! {
 
         impl #impl_generics #ty #ty_generics #where_clause {
             const TYPE_ID: ::tl::parsing::ConstructorId = ::tl::parsing::ConstructorId(#tl_id);
         }
 
     }];
+    extra_items.push(next_registration(quote! {
+        cstore.0.insert(::tl::parsing::ConstructorId(#tl_id), ::tl::dynamic::TLCtor(<#ty #boxes as ::tl::dynamic::TLDynamic>::deserialize));
+    }));
 
     let serialize = match body {
         &syn::VariantData::Unit => quote! {},
@@ -247,11 +281,33 @@ fn impl_item_enum(ty: &syn::Ident, generics: &syn::Generics, variants: &[syn::Va
         }
     };
 
+    let ty_repeated = iter::repeat(ty);
+    let extra_items = vec![next_registration(quote! {
+        #( cstore.0.insert(::tl::parsing::ConstructorId(#tl_ids), ::tl::dynamic::TLCtor(<#ty_repeated as ::tl::dynamic::TLDynamic>::deserialize)); )*
+    })];
+
     Impls {
         type_id: type_id,
         serialize: serialize,
         deserialize: deserialize,
         deserialize_boxed: deserialize_boxed,
-        extra_items: vec![],
+        extra_items: extra_items,
     }
+}
+
+#[proc_macro_derive(TLDynamic, attributes(tl_register_all))]
+pub fn expand_tldynamic(input: TokenStream) -> TokenStream {
+    let ast = syn::parse_macro_input(&input.to_string()).unwrap();
+    let ident = &ast.ident;
+    let (ty_count, _) = increment_type_counts();
+    let ret = quote! {
+        impl #ident {
+            pub fn register_ctors<R: ::tl::parsing::Reader>(cstore: &mut ::tl::dynamic::TLCtorMap<R>) {
+                #ident::__register_1(cstore)
+            }
+
+            pub fn #ty_count<R: ::tl::parsing::Reader>(_: &mut ::tl::dynamic::TLCtorMap<R>) {}
+        }
+    };
+    ret.parse().unwrap()
 }

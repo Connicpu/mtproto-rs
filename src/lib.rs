@@ -8,3 +8,7 @@ extern crate openssl;
 
 pub mod tl;
 pub mod rpc;
+
+#[derive(TLDynamic)]
+#[tl_register_all]
+pub struct AllDynamicTypes;

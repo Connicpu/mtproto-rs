@@ -14,7 +14,7 @@ pub struct InvokeAfterMsgs<T: Type> {
     pub query: T,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_da9b0d0d)]
 pub struct InvokeWithLayer<T: Type> {
     pub layer: i32,
@@ -156,7 +156,7 @@ pub mod help {
     pub struct GetConfig;
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_b921bd04)]
 pub struct GetFutureSalts {
     pub num: i32,

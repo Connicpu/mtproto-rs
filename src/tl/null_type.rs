@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 use tl::{self, Type};
-use tl::parsing::{ConstructorId, ReadContext, WriteContext};
-use tl::dynamic::{TLDynamic, ClassStore, TLObject};
+use tl::parsing::{ConstructorId, Reader, WriteContext};
+use tl::dynamic::{TLCtorMap, TLDynamic};
 
 #[derive(Copy, Clone, Debug)]
 pub struct Null;
@@ -23,23 +23,14 @@ impl Type for Null {
         Ok(())
     }
 
-    fn deserialize<R: Read>(_: &mut ReadContext<R>) -> tl::Result<Self> {
+    fn deserialize<R: Reader>(_: &mut R) -> tl::Result<Self> {
         Err(tl::Error::BoxedAsBare)
     }
 
-    fn deserialize_boxed<R: Read>(id: ConstructorId, _: &mut ReadContext<R>) -> tl::Result<Self> {
+    fn deserialize_boxed<R: Reader>(id: ConstructorId, _: &mut R) -> tl::Result<Self> {
         match id {
             Null::SIGNATURE => Ok(Null),
             _ => Err(tl::Error::InvalidData),
         }
-    }
-}
-
-impl TLDynamic for Null {
-    fn register_ctors(cstore: &mut ClassStore) {
-        fn do_deser(_: ConstructorId, _: &mut ReadContext<&mut Read>) -> tl::Result<Box<TLObject>> {
-            Ok(Box::new(Null))
-        }
-        cstore.add_ctor(Null::SIGNATURE, do_deser)
     }
 }

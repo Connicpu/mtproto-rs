@@ -1,15 +1,30 @@
 use std::io::{self, Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+
+use tl::dynamic::{TLCtorMap, TLObject};
 use tl;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ConstructorId(pub u32);
 
-pub struct ContextTell(u64);
+pub trait Reader: Read {
+    fn read_boxed<T: tl::Type>(&mut self) -> tl::Result<T>;
+    fn read_bare<T: tl::Type>(&mut self) -> tl::Result<T>;
+    fn read_polymorphic(&mut self) -> tl::Result<Box<TLObject>>;
+
+    fn read_generic<T: tl::Type>(&mut self) -> tl::Result<T> {
+        if T::bare_type() {
+            self.read_bare()
+        } else {
+            self.read_boxed()
+        }
+    }
+}
 
 pub struct ReadContext<R: Read> {
     stream: R,
     position: u64,
+    ctors: Option<TLCtorMap<ReadContext<R>>>,
 }
 
 pub struct WriteContext<W: Write> {
@@ -22,42 +37,33 @@ impl<R: Read> ReadContext<R> {
         ReadContext {
             stream: reader,
             position: 0,
+            ctors: None,
         }
     }
 
-    pub fn read_boxed<T: tl::Type>(&mut self) -> tl::Result<T> {
+    pub fn set_ctors(&mut self, ctors: TLCtorMap<ReadContext<R>>) {
+        self.ctors = Some(ctors);
+    }
+}
+
+impl<R: Read> Reader for ReadContext<R> {
+    fn read_boxed<T: tl::Type>(&mut self) -> tl::Result<T> {
         let con_id = ConstructorId(try!(self.read_u32::<LittleEndian>()));
         T::deserialize_boxed(con_id, self)
     }
 
-    pub fn read_bare<T: tl::Type>(&mut self) -> tl::Result<T> {
+    fn read_bare<T: tl::Type>(&mut self) -> tl::Result<T> {
         assert!(T::bare_type());
         T::deserialize(self)
     }
 
-    pub fn read_generic<T: tl::Type>(&mut self) -> tl::Result<T> {
-        if T::bare_type() {
-            self.read_bare()
-        } else {
-            self.read_boxed()
-        }
-    }
-
-    pub fn borrow_polymorphic(&mut self) -> ReadContext<&mut Read> {
-        ReadContext {
-            stream: &mut self.stream as &mut Read,
-            position: self.position,
-        }
-    }
-
-    pub fn integrate_polymorphic(&mut self, result: ContextTell) {
-        self.position = result.0;
-    }
-}
-
-impl<'a> ReadContext<&'a mut Read> {
-    pub fn end_polymorphic(self) -> ContextTell {
-        ContextTell(self.position)
+    fn read_polymorphic(&mut self) -> tl::Result<Box<TLObject>> {
+        let id: ConstructorId = self.read_bare()?;
+        let ctor = match self.ctors.as_ref().and_then(|m| m.0.get(&id)) {
+            Some(ctor) => ctor.0,
+            None => return Err(super::Error::UnknownType),
+        };
+        ctor(id, self)
     }
 }
 
@@ -109,23 +115,6 @@ impl<W: Write> WriteContext<W> {
             self.write_boxed(value)
         }
     }
-
-    pub fn borrow_polymorphic(&mut self) -> WriteContext<&mut Write> {
-        WriteContext {
-            stream: &mut self.stream as &mut Write,
-            position: self.position,
-        }
-    }
-
-    pub fn integrate_polymorphic(&mut self, result: ContextTell) {
-        self.position = result.0;
-    }
-}
-
-impl<'a> WriteContext<&'a mut Write> {
-    pub fn end_polymorphic(self) -> ContextTell {
-        ContextTell(self.position)
-    }
 }
 
 impl<W: Write> Write for WriteContext<W> {
@@ -169,12 +158,12 @@ impl tl::Type for ConstructorId {
         Ok(())
     }
 
-    fn deserialize<R: Read>(reader: &mut ReadContext<R>) -> tl::Result<Self> {
+    fn deserialize<R: Reader>(reader: &mut R) -> tl::Result<Self> {
         use byteorder::{LittleEndian, ReadBytesExt};
         Ok(ConstructorId(try!(reader.read_u32::<LittleEndian>())))
     }
 
-    fn deserialize_boxed<R: Read>(_: ConstructorId, _: &mut ReadContext<R>) -> tl::Result<Self> {
+    fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> tl::Result<Self> {
         Err(tl::Error::PrimitiveAsPolymorphic)
     }
 }
