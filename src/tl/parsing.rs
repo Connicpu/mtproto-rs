@@ -19,6 +19,14 @@ pub trait Reader: Read {
             self.read_boxed()
         }
     }
+
+    fn aligned<'a>(&'a mut self, alignment: usize) -> AlignedReader<'a, Self> {
+        AlignedReader {
+            reader: self,
+            alignment: alignment,
+            position: 0,
+        }
+    }
 }
 
 pub trait Writer: Write {
@@ -32,24 +40,41 @@ pub trait Writer: Write {
             self.write_boxed(value)
         }
     }
+
+    fn aligned<'a>(&'a mut self, alignment: usize) -> AlignedWriter<'a, Self> {
+        AlignedWriter {
+            writer: self,
+            alignment: alignment,
+            position: 0,
+        }
+    }
 }
 
 pub struct ReadContext<R: Read> {
     stream: R,
-    position: u64,
     ctors: Option<TLCtorMap<ReadContext<R>>>,
+}
+
+pub struct AlignedReader<'a, R: 'a + ?Sized + Reader> {
+    reader: &'a mut R,
+    alignment: usize,
+    position: usize,
 }
 
 pub struct WriteContext<W: Write> {
     stream: W,
-    position: u64,
+}
+
+pub struct AlignedWriter<'a, W: 'a + ?Sized + Writer> {
+    writer: &'a mut W,
+    alignment: usize,
+    position: usize,
 }
 
 impl<R: Read> ReadContext<R> {
     pub fn new(reader: R) -> Self {
         ReadContext {
             stream: reader,
-            position: 0,
             ctors: None,
         }
     }
@@ -82,23 +107,41 @@ impl<R: Read> Reader for ReadContext<R> {
 
 impl<R: Read> Read for ReadContext<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let result = self.stream.read(buf);
-        if let Ok(len) = result {
-            self.position += len as u64;
-        }
-        result
+        self.stream.read(buf)
     }
 }
 
-impl<R: Read> tl::ReadHelpers for ReadContext<R> {
-    fn align(&mut self, alignment: u8) -> tl::Result<()> {
-        let stub = (self.position % alignment as u64) as usize;
-        if stub != 0 {
-            let mut buf: [u8; 256] = [0; 256];
-            let remaining = alignment as usize - stub;
-            try!(self.read_exact(&mut buf[0..remaining]));
+impl<'a, R: ?Sized + Reader> Reader for AlignedReader<'a, R> {
+    fn read_boxed<T: tl::Type>(&mut self) -> tl::Result<T> {
+        self.reader.read_boxed()
+    }
+
+    fn read_bare<T: tl::Type>(&mut self) -> tl::Result<T> {
+        self.reader.read_bare()
+    }
+
+    fn read_polymorphic(&mut self) -> tl::Result<Box<TLObject>> {
+        self.reader.read_polymorphic()
+    }
+}
+
+
+impl<'a, R: ?Sized + Reader> Read for AlignedReader<'a, R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let read = self.reader.read(buf)?;
+        self.position += read;
+        Ok(read)
+    }
+}
+
+impl<'a, R: ?Sized + Reader> Drop for AlignedReader<'a, R> {
+    fn drop(&mut self) {
+        let remainder = self.position % self.alignment;
+        if remainder != 0 {
+            let mut buf = [0u8; 256];
+            let pad = self.alignment - remainder;
+            self.read_exact(&mut buf[..pad]).expect("couldn't pad")
         }
-        Ok(())
     }
 }
 
@@ -106,7 +149,6 @@ impl<W: Write> WriteContext<W> {
     pub fn new(writer: W) -> Self {
         WriteContext {
             stream: writer,
-            position: 0,
         }
     }
 }
@@ -126,11 +168,7 @@ impl<W: Write> Writer for WriteContext<W> {
 
 impl<W: Write> Write for WriteContext<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let result = self.stream.write(buf);
-        if let Ok(len) = result {
-            self.position += len as u64;
-        }
-        result
+        self.stream.write(buf)
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -138,15 +176,26 @@ impl<W: Write> Write for WriteContext<W> {
     }
 }
 
-impl<W: Write> tl::WriteHelpers for WriteContext<W> {
-    fn pad(&mut self, alignment: u8) -> tl::Result<()> {
-        let stub = (self.position % alignment as u64) as usize;
-        if stub != 0 {
-            let buf: [u8; 256] = [0; 256];
-            let remaining = alignment as usize - stub;
-            try!(self.write_all(&buf[0..remaining]));
+impl<'a, W: ?Sized + Writer> Write for AlignedWriter<'a, W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let written = self.writer.write(buf)?;
+        self.position += written;
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.writer.flush()
+    }
+}
+
+impl<'a, W: ?Sized + Writer> Drop for AlignedWriter<'a, W> {
+    fn drop(&mut self) {
+        let remainder = self.position % self.alignment;
+        if remainder != 0 {
+            let buf = [0u8; 256];
+            let pad = self.alignment - remainder;
+            self.write_all(&buf[..pad]).expect("couldn't pad");
         }
-        Ok(())
     }
 }
 

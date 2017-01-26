@@ -191,7 +191,8 @@ impl<'a> Type for &'a [u8] {
         None
     }
 
-    fn serialize<W: Writer>(&self, writer: &mut W) -> Result<()> {
+    fn serialize<W: Writer>(&self, writer_: &mut W) -> Result<()> {
+        let mut writer = writer_.aligned(4);
         let len = self.len();
         assert!(len & 0xFF000000 == 0); // len fits in a 24-bit integer
 
@@ -206,7 +207,6 @@ impl<'a> Type for &'a [u8] {
 
         // Write the actual string and padding
         try!(writer.write_all(*self));
-        //try!(writer.pad(4));
 
         Ok(())
     }
@@ -235,7 +235,8 @@ impl Type for Vec<u8> {
         (&self[..]).serialize(writer)
     }
 
-    fn deserialize<R: Reader>(reader: &mut R) -> Result<Self> {
+    fn deserialize<R: Reader>(reader_: &mut R) -> Result<Self> {
+        let mut reader = reader_.aligned(4);
         let low_len = try!(reader.read_u8());
         let len = if low_len != 254 {
             low_len as usize
@@ -247,7 +248,6 @@ impl Type for Vec<u8> {
 
         let mut bytes = vec![0; len];
         try!(reader.read_exact(&mut bytes));
-        //try!(reader.align(4));
 
         Ok(bytes)
     }
