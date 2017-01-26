@@ -1,7 +1,7 @@
 use std;
 use std::io::{Read, Write};
 use tl::{self, Type};
-use tl::parsing::{ConstructorId, Reader, WriteContext};
+use tl::parsing::{ConstructorId, Reader, Writer};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 #[derive(Debug)]
@@ -38,7 +38,7 @@ impl<T: Type> Type for Vector<T> {
         Some(TYPE_ID)
     }
 
-    fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> tl::Result<()> {
+    fn serialize<W: Writer>(&self, writer: &mut W) -> tl::Result<()> {
         SendSlice::from_elements(&self.elements).serialize(writer)
     }
 
@@ -77,7 +77,7 @@ impl<'a, T: Type + 'a> Type for SendSlice<'a, T> {
         Some(TYPE_ID)
     }
 
-    fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> tl::Result<()> {
+    fn serialize<W: Writer>(&self, writer: &mut W) -> tl::Result<()> {
         assert!(self.elements.len() <= std::u32::MAX as usize);
         try!(writer.write_u32::<LittleEndian>(self.elements.len() as u32));
         for item in self.elements {

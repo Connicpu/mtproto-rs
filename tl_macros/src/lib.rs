@@ -89,9 +89,9 @@ pub fn expand_tltype(input: TokenStream) -> TokenStream {
                 #type_id
             }
 
-            fn serialize<W: ::std::io::Write>(
+            fn serialize<W: ::tl::parsing::Writer>(
                 &self,
-                writer: &mut ::tl::parsing::WriteContext<W>
+                writer: &mut W
             ) -> ::tl::Result<()> {
                 #serialize
             }

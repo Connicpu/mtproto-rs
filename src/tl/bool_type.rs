@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 use tl::{self, Type};
-use tl::parsing::{ConstructorId, Reader, WriteContext};
+use tl::parsing::{ConstructorId, Reader, Writer};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Bool(pub bool);
@@ -23,7 +23,7 @@ impl Type for Bool {
         }
     }
 
-    fn serialize<W: Write>(&self, _: &mut WriteContext<W>) -> tl::Result<()> {
+    fn serialize<W: Writer>(&self, _: &mut W) -> tl::Result<()> {
         Ok(())
     }
 

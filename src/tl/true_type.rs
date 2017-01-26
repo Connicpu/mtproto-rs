@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 use tl::{self, Type};
-use tl::parsing::{ConstructorId, Reader, WriteContext};
+use tl::parsing::{ConstructorId, Reader, Writer};
 
 #[derive(Copy, Clone, Debug)]
 pub struct True;
@@ -18,7 +18,7 @@ impl Type for True {
         Some(True::SIGNATURE)
     }
 
-    fn serialize<W: Write>(&self, _: &mut WriteContext<W>) -> tl::Result<()> {
+    fn serialize<W: Writer>(&self, _: &mut W) -> tl::Result<()> {
         Ok(())
     }
 

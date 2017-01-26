@@ -2,24 +2,19 @@ use super::{Result, Type};
 use std::io::Write;
 use std::any::Any;
 use std::collections::HashMap;
-use tl::parsing::{ConstructorId, Reader, WriteContext};
+use tl::parsing::{ConstructorId, Reader, Writer};
 
 pub struct TLCtor<R: Reader>(pub fn(ConstructorId, &mut R) -> Result<Box<TLObject>>);
 pub struct TLCtorMap<R: Reader>(pub HashMap<ConstructorId, TLCtor<R>>);
 
 pub trait TLObject: Any {
     fn tl_id(&self) -> ConstructorId;
-    fn serialize(&self, writer: &mut WriteContext<&mut Write>) -> Result<()>;
     fn as_any(&self) -> &Any;
 }
 
 impl<T: Type + Any> TLObject for T {
     fn tl_id(&self) -> ConstructorId {
         self.type_id().unwrap()
-    }
-
-    fn serialize(&self, writer: &mut WriteContext<&mut Write>) -> Result<()> {
-        <T as Type>::serialize(self, writer)
     }
 
     fn as_any(&self) -> &Any { self }
@@ -34,7 +29,7 @@ impl Type for Box<TLObject> {
         None
     }
 
-    fn serialize<W: Write>(&self, _: &mut WriteContext<W>) -> Result<()> {
+    fn serialize<W: Writer>(&self, _: &mut W) -> Result<()> {
         unimplemented!()
     }
 

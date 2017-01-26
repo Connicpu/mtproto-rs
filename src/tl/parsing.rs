@@ -21,6 +21,19 @@ pub trait Reader: Read {
     }
 }
 
+pub trait Writer: Write {
+    fn write_boxed<T: tl::Type>(&mut self, value: &T) -> tl::Result<()>;
+    fn write_bare<T: tl::Type>(&mut self, value: &T) -> tl::Result<()>;
+
+    fn write_generic<T: tl::Type>(&mut self, value: &T) -> tl::Result<()> {
+        if T::bare_type() {
+            self.write_bare(value)
+        } else {
+            self.write_boxed(value)
+        }
+    }
+}
+
 pub struct ReadContext<R: Read> {
     stream: R,
     position: u64,
@@ -96,24 +109,18 @@ impl<W: Write> WriteContext<W> {
             position: 0,
         }
     }
+}
 
-    pub fn write_boxed<T: tl::Type>(&mut self, value: &T) -> tl::Result<()> {
+impl<W: Write> Writer for WriteContext<W> {
+    fn write_boxed<T: tl::Type>(&mut self, value: &T) -> tl::Result<()> {
         let con_id = value.type_id().unwrap();
         try!(self.write_u32::<LittleEndian>(con_id.0));
         value.serialize(self)
     }
 
-    pub fn write_bare<T: tl::Type>(&mut self, value: &T) -> tl::Result<()> {
+    fn write_bare<T: tl::Type>(&mut self, value: &T) -> tl::Result<()> {
         assert!(T::bare_type());
         value.serialize(self)
-    }
-
-    pub fn write_generic<T: tl::Type>(&mut self, value: &T) -> tl::Result<()> {
-        if T::bare_type() {
-            self.write_bare(value)
-        } else {
-            self.write_boxed(value)
-        }
     }
 }
 
@@ -152,7 +159,7 @@ impl tl::Type for ConstructorId {
         None
     }
 
-    fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> tl::Result<()> {
+    fn serialize<W: Writer>(&self, writer: &mut W) -> tl::Result<()> {
         use byteorder::{LittleEndian, WriteBytesExt};
         try!(writer.write_u32::<LittleEndian>(self.0));
         Ok(())

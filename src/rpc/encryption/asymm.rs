@@ -53,6 +53,7 @@ impl RsaPublicKey {
     pub fn sha1_fingerprint(&self) -> Result<Vec<u8>> {
         let mut buf = io::Cursor::new(Vec::<u8>::new());
         {
+            use tl::parsing::Writer;
             let mut writer = ::tl::parsing::WriteContext::new(&mut buf);
             writer.write_bare(&self.0.n().unwrap().to_vec()).unwrap();
             writer.write_bare(&self.0.e().unwrap().to_vec()).unwrap();
