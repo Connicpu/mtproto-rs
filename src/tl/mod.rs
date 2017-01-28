@@ -11,7 +11,7 @@ pub use self::true_type::True;
 #[doc(inline)]
 pub use self::null_type::Null;
 #[doc(inline)]
-pub use self::vector::{Vector, SendSlice};
+pub use self::vector::{Vector, BareVector, SendSlice};
 
 pub mod error;
 pub mod parsing;

@@ -743,7 +743,7 @@ pub enum Updates {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_2ec2a43c)]
 pub struct DcOption {
     pub id: i32,
@@ -752,7 +752,7 @@ pub struct DcOption {
     pub port: i32,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_7dae33e0)]
 pub struct Config {
     pub date: i32,
@@ -1019,7 +1019,7 @@ pub enum DocumentAttribute {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_ae636f24)]
 pub struct DisabledFeature {
     pub feature: String,

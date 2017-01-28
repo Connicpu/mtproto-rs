@@ -1,11 +1,19 @@
+use std::fmt;
+use std::cmp::min;
 use std::io::{self, Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-use tl::dynamic::{TLCtorMap, TLObject};
+use tl::dynamic::{TLCtorMap, TLObject, UnreadableBag};
 use tl;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct ConstructorId(pub u32);
+
+impl fmt::Debug for ConstructorId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "#{:08x}", self.0)
+    }
+}
 
 pub trait Reader: Read {
     fn read_boxed<T: tl::Type>(&mut self) -> tl::Result<T>;
@@ -25,6 +33,13 @@ pub trait Reader: Read {
             reader: self,
             alignment: alignment,
             position: 0,
+        }
+    }
+
+    fn take<'a>(&'a mut self, limit: usize) -> TakeReader<'a, Self> {
+        TakeReader {
+            reader: self,
+            limit: limit,
         }
     }
 }
@@ -59,6 +74,11 @@ pub struct AlignedReader<'a, R: 'a + ?Sized + Reader> {
     reader: &'a mut R,
     alignment: usize,
     position: usize,
+}
+
+pub struct TakeReader<'a, R: 'a + ?Sized + Reader> {
+    reader: &'a mut R,
+    limit: usize,
 }
 
 pub struct WriteContext<W: Write> {
@@ -97,11 +117,17 @@ impl<R: Read> Reader for ReadContext<R> {
 
     fn read_polymorphic(&mut self) -> tl::Result<Box<TLObject>> {
         let id: ConstructorId = self.read_bare()?;
-        let ctor = match self.ctors.as_ref().and_then(|m| m.0.get(&id)) {
-            Some(ctor) => ctor.0,
-            None => return Err(super::Error::UnknownType),
-        };
-        ctor(id, self)
+        match self.ctors.as_ref().and_then(|m| m.0.get(&id)).map(|c| c.0) {
+            Some(ctor) => ctor(id, self),
+            None => {
+                let mut remainder = vec![];
+                self.read_to_end(&mut remainder)?;
+                Ok(Box::new(UnreadableBag {
+                    tl_id: id,
+                    bytes: remainder,
+                }))
+            },
+        }
     }
 }
 
@@ -142,6 +168,33 @@ impl<'a, R: ?Sized + Reader> Drop for AlignedReader<'a, R> {
             let pad = self.alignment - remainder;
             self.read_exact(&mut buf[..pad]).expect("couldn't pad")
         }
+    }
+}
+
+impl<'a, R: ?Sized + Reader> Reader for TakeReader<'a, R> {
+    fn read_boxed<T: tl::Type>(&mut self) -> tl::Result<T> {
+        self.reader.read_boxed()
+    }
+
+    fn read_bare<T: tl::Type>(&mut self) -> tl::Result<T> {
+        self.reader.read_bare()
+    }
+
+    fn read_polymorphic(&mut self) -> tl::Result<Box<TLObject>> {
+        self.reader.read_polymorphic()
+    }
+}
+
+
+impl<'a, R: ?Sized + Reader> Read for TakeReader<'a, R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if self.limit == 0 {
+            return Ok(0);
+        }
+        let max = min(buf.len(), self.limit);
+        let read = self.reader.read(&mut buf[..max])?;
+        self.limit -= read;
+        Ok(read)
     }
 }
 

@@ -1,4 +1,5 @@
-use tl::{Type, Vector};
+use tl::{Type, Vector, BareVector};
+use tl::dynamic::{TLObject, LengthAndObject};
 
 #[derive(TLType)]
 #[tl_id(_cb9f372d)]
@@ -161,3 +162,46 @@ pub mod help {
 pub struct GetFutureSalts {
     pub num: i32,
 }
+
+#[derive(Debug, TLType)]
+#[tl_id(_f35c6d01)]
+pub struct RpcResult {
+    pub req_msg_id: u64,
+    pub result: Box<TLObject>,
+}
+
+#[derive(Debug, TLType)]
+#[tl_id(_2144ca19)]
+pub struct RpcError {
+    pub error_code: i32,
+    pub error_message: String,
+}
+
+#[derive(Debug, TLType)]
+pub enum DestroySessionRes {
+    #[tl_id(_e22045fc)] Ok {
+        session_id: u64,
+    },
+    #[tl_id(_62d350c9)] None {
+        session_id: u64,
+    },
+}
+
+#[derive(Debug, TLType)]
+#[tl_id(_9ec20908)]
+pub struct NewSession {
+    pub first_msg_id: u64,
+    pub unique_id: u64,
+    pub server_salt: u64,
+}
+
+#[derive(Debug, TLType)]
+pub struct Message {
+    pub msg_id: u64,
+    pub seqno: u32,
+    pub body: LengthAndObject,
+}
+
+#[derive(Debug, TLType)]
+#[tl_id(_73f1f8dc)]
+pub struct MessageContainer(pub BareVector<Message>);

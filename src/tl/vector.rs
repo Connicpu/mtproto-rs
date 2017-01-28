@@ -9,6 +9,11 @@ pub struct Vector<T: Type> {
     pub elements: Vec<T>,
 }
 
+#[derive(Debug)]
+pub struct BareVector<T: Type> {
+    pub elements: Vec<T>,
+}
+
 pub struct SendSlice<'a, T: Type + 'a> {
     pub elements: &'a [T],
 }
@@ -57,6 +62,46 @@ impl<T: Type> Type for Vector<T> {
         }
 
         Vector::deserialize(reader)
+    }
+}
+
+impl<T: Type> BareVector<T> {
+    pub fn new() -> BareVector<T> {
+        BareVector {
+            elements: vec![],
+        }
+    }
+
+    pub fn from_elements(vec: Vec<T>) -> BareVector<T> {
+        BareVector {
+            elements: vec,
+        }
+    }
+}
+
+impl<T: Type> Type for BareVector<T> {
+    fn bare_type() -> bool {
+        true
+    }
+
+    fn type_id(&self) -> Option<ConstructorId> {
+        None
+    }
+
+    fn serialize<W: Writer>(&self, _: &mut W) -> tl::Result<()> {
+        unimplemented!()
+    }
+
+    fn deserialize<R: Reader>(reader: &mut R) -> tl::Result<Self> {
+        let count: u32 = reader.read_bare()?;
+        let vec = (0..count).into_iter()
+            .map(|_| reader.read_bare())
+            .collect::<tl::Result<Vec<T>>>()?;
+        Ok(BareVector { elements: vec })
+    }
+
+    fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> tl::Result<Self> {
+        Err(tl::Error::PrimitiveAsPolymorphic)
     }
 }
 
