@@ -1,15 +1,14 @@
 use std::io;
 
 use chrono::{UTC, Timelike};
-use byteorder::{LittleEndian, ByteOrder, ReadBytesExt, WriteBytesExt, self};
+use byteorder::{LittleEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
 use openssl::hash;
 
 pub mod encryption;
 pub mod functions;
 
+use error::Result;
 use self::functions::authz::Nonce;
-
-pub type OpensslResult<T> = Result<T, ::openssl::error::ErrorStack>;
 
 pub struct Session {
     session_id: u64,
@@ -31,7 +30,7 @@ pub struct InboundPayload {
     pub was_encrypted: bool,
 }
 
-pub type InboundMessage = Result<InboundPayload, i32>;
+pub type InboundMessage = ::std::result::Result<InboundPayload, i32>;
 
 impl Session {
     pub fn new(session_id: u64) -> Session {
@@ -61,7 +60,7 @@ impl Session {
         (timestamp << 32) | (nano & !3)
     }
 
-    pub fn encrypted_payload(&mut self, payload: &[u8]) -> OpensslResult<OutboundMessage> {
+    pub fn encrypted_payload(&mut self, payload: &[u8]) -> Result<OutboundMessage> {
         let key = self.auth_key.unwrap();
         let mut ret = OutboundMessage {
             message_id: self.next_message_id(),
@@ -95,7 +94,7 @@ impl Session {
         ret
     }
 
-    pub fn assemble_payload(&mut self, payload: &[u8], encrypt: bool) -> OpensslResult<OutboundMessage> {
+    pub fn assemble_payload(&mut self, payload: &[u8], encrypt: bool) -> Result<OutboundMessage> {
         if encrypt {
             self.encrypted_payload(payload)
         } else {
@@ -103,7 +102,7 @@ impl Session {
         }
     }
 
-    pub fn process_message(&self, message: &[u8]) -> OpensslResult<InboundMessage> {
+    pub fn process_message(&self, message: &[u8]) -> Result<InboundMessage> {
         if message.len() == 4 {
             return Ok(Err(LittleEndian::read_i32(&message)));
         } else if message.len() < 8 {
@@ -129,7 +128,7 @@ impl Session {
         }))
     }
 
-    fn decrypt_message(&self, message: &[u8]) -> OpensslResult<InboundMessage> {
+    fn decrypt_message(&self, message: &[u8]) -> Result<InboundMessage> {
         let decrypted = self.auth_key.unwrap().decrypt_message(message)?;
         let mut cursor = io::Cursor::new(&decrypted[..]);
         let server_salt = cursor.read_u64::<LittleEndian>().unwrap();
@@ -153,15 +152,15 @@ impl Session {
     }
 }
 
-fn sha1_bytes(parts: &[&[u8]]) -> OpensslResult<Vec<u8>> {
+fn sha1_bytes(parts: &[&[u8]]) -> Result<Vec<u8>> {
     let mut hasher = hash::Hasher::new(hash::MessageDigest::sha1())?;
     for part in parts {
         hasher.update(part)?;
     }
-    hasher.finish()
+    Ok(hasher.finish()?)
 }
 
-fn sha1_nonces(nonces: &[Nonce]) -> OpensslResult<Vec<u8>> {
+fn sha1_nonces(nonces: &[Nonce]) -> Result<Vec<u8>> {
     let mut hasher = hash::Hasher::new(hash::MessageDigest::sha1())?;
     for nonce in nonces {
         let mut tmp = [0u8; 16];
@@ -169,29 +168,5 @@ fn sha1_nonces(nonces: &[Nonce]) -> OpensslResult<Vec<u8>> {
         LittleEndian::write_u64(&mut tmp[8..], nonce.1);
         hasher.update(&tmp)?;
     }
-    hasher.finish()
-}
-
-pub type RpcRes<T> = Result<T, RpcError>;
-
-pub enum RpcError {
-    Io(io::Error),
-    WrongAuthKey,
-    InvalidLength,
-    Unknown,
-}
-
-impl From<io::Error> for RpcError {
-    fn from(io: io::Error) -> RpcError {
-        RpcError::Io(io)
-    }
-}
-
-impl From<byteorder::Error> for RpcError {
-    fn from(bo: byteorder::Error) -> RpcError {
-        match bo {
-            byteorder::Error::Io(io) => From::from(io),
-            _ => RpcError::Unknown,
-        }
-    }
+    Ok(hasher.finish()?)
 }

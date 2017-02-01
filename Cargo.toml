@@ -5,9 +5,10 @@ authors = ["Connor Hilarides <connorcpu@live.com>"]
 license = "MIT/Apache-2.0"
 
 [dependencies]
-byteorder = "0.4"
+byteorder = "1"
 chrono = "0.2"
 crc = "1.2"
+error-chain = "0.8"
 
 [dependencies.tl_macros]
 path = "tl_macros"

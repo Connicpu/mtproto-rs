@@ -3,9 +3,8 @@ use std::io;
 use byteorder::{LittleEndian, ByteOrder};
 use openssl::{bn, hash, rsa};
 
+use error::Result;
 use super::{AuthKey, Padding, sha1_and_or_pad};
-
-pub type Result<T> = ::std::result::Result<T, ::openssl::error::ErrorStack>;
 
 #[derive(Debug)]
 pub struct RsaPublicKeyRef<'a>(&'a [u8]);
@@ -37,10 +36,12 @@ pub fn find_first_key(of_fingerprints: &[u64]) -> Result<Option<(RsaPublicKey, u
             let fingerprint = key.fingerprint()?;
             if of_fingerprints.contains(&fingerprint) {
                 Ok(Some((key, fingerprint)))
-            } else { Ok(None) }
+            } else {
+                Ok(None)
+            }
         });
     for item in iter {
-        if let Some(x) = item? {
+        if let Some(x) = (item as Result<_>)? {
             return Ok(Some(x))
         }
     }
@@ -60,7 +61,7 @@ impl RsaPublicKey {
         }
         let mut hasher = hash::Hasher::new(hash::MessageDigest::sha1())?;
         hasher.update(&buf.into_inner())?;
-        hasher.finish()
+        Ok(hasher.finish()?)
     }
 
     pub fn fingerprint(&self) -> Result<u64> {

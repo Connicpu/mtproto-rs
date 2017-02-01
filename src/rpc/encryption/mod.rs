@@ -3,12 +3,11 @@ use std::io::{Cursor, Write};
 use byteorder::{LittleEndian, ByteOrder, WriteBytesExt};
 use openssl::{aes, symm};
 
+use error::Result;
 use rpc::functions::authz::{Nonce, PQInnerData};
 use rpc::{sha1_bytes, sha1_nonces};
 
 pub mod asymm;
-
-pub type Result<T> = ::std::result::Result<T, ::openssl::error::ErrorStack>;
 
 enum Padding {
     Total255,

@@ -273,6 +273,6 @@ impl tl::Type for ConstructorId {
     }
 
     fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> tl::Result<Self> {
-        Err(tl::Error::PrimitiveAsPolymorphic)
+        Err(::error::ErrorKind::PrimitiveAsPolymorphic.into())
     }
 }

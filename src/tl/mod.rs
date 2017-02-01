@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use tl::parsing::{ConstructorId, Reader, Writer};
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 
-pub use self::error::{Error, Result};
+pub use super::error::{Error, ErrorKind, Result};
 #[doc(inline)]
 pub use self::bool_type::Bool;
 #[doc(inline)]
@@ -13,7 +13,6 @@ pub use self::null_type::Null;
 #[doc(inline)]
 pub use self::vector::{Vector, BareVector, SendSlice};
 
-pub mod error;
 pub mod parsing;
 pub mod complex_types;
 pub mod dynamic;
@@ -65,7 +64,7 @@ macro_rules! impl_tl_primitive {
             }
 
             fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
-                Err(Error::PrimitiveAsPolymorphic)
+                Err(ErrorKind::PrimitiveAsPolymorphic.into())
             }
         }
     }
@@ -107,7 +106,7 @@ macro_rules! impl_tl_tuple {
             }
 
             fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
-                Err(Error::PrimitiveAsPolymorphic)
+                Err(ErrorKind::PrimitiveAsPolymorphic.into())
             }
         }
     };
@@ -138,11 +137,11 @@ impl<'a, T: Type> Type for &'a [T] {
     }
 
     fn deserialize<R: Reader>(_: &mut R) -> Result<Self> {
-        Err(Error::ReceivedSendType)
+        Err(ErrorKind::ReceivedSendType.into())
     }
 
     fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
-        Err(Error::ReceivedSendType)
+        Err(ErrorKind::ReceivedSendType.into())
     }
 }
 
@@ -173,7 +172,7 @@ impl<T: Type> Type for Vec<T> {
 
     fn deserialize_boxed<R: Reader>(id: ConstructorId, reader: &mut R) -> Result<Self> {
         if id != VEC_TYPE_ID {
-            return Err(Error::InvalidData);
+            return Err(ErrorKind::InvalidData.into());
         }
 
         Vec::deserialize(reader)
@@ -212,11 +211,11 @@ impl<'a> Type for &'a [u8] {
     }
 
     fn deserialize<R: Reader>(_: &mut R) -> Result<Self> {
-        Err(Error::ReceivedSendType)
+        Err(ErrorKind::ReceivedSendType.into())
     }
 
     fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
-        Err(Error::ReceivedSendType)
+        Err(ErrorKind::ReceivedSendType.into())
     }
 }
 
@@ -253,7 +252,7 @@ impl Type for Vec<u8> {
     }
 
     fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
-        Err(Error::PrimitiveAsPolymorphic)
+        Err(ErrorKind::PrimitiveAsPolymorphic.into())
     }
 }
 
@@ -278,7 +277,7 @@ impl Type for String {
     }
 
     fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
-        Err(Error::PrimitiveAsPolymorphic)
+        Err(ErrorKind::PrimitiveAsPolymorphic.into())
     }
 }
 
@@ -299,11 +298,11 @@ impl<'a> Type for &'a str {
     }
 
     fn deserialize<R: Reader>(_: &mut R) -> Result<Self> {
-        Err(Error::ReceivedSendType)
+        Err(ErrorKind::ReceivedSendType.into())
     }
 
     fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
-        Err(Error::ReceivedSendType)
+        Err(ErrorKind::ReceivedSendType.into())
     }
 }
 

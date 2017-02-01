@@ -1,5 +1,4 @@
 use std;
-use std::io::{Read, Write};
 use tl::{self, Type};
 use tl::parsing::{ConstructorId, Reader, Writer};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -58,7 +57,7 @@ impl<T: Type> Type for Vector<T> {
 
     fn deserialize_boxed<R: Reader>(id: ConstructorId, reader: &mut R) -> tl::Result<Self> {
         if id != TYPE_ID {
-            return Err(tl::Error::InvalidData);
+            return Err(::error::ErrorKind::InvalidData.into());
         }
 
         Vector::deserialize(reader)
@@ -101,7 +100,7 @@ impl<T: Type> Type for BareVector<T> {
     }
 
     fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> tl::Result<Self> {
-        Err(tl::Error::PrimitiveAsPolymorphic)
+        Err(::error::ErrorKind::PrimitiveAsPolymorphic.into())
     }
 }
 
@@ -132,10 +131,10 @@ impl<'a, T: Type + 'a> Type for SendSlice<'a, T> {
     }
 
     fn deserialize<R: Reader>(_: &mut R) -> tl::Result<Self> {
-        Err(tl::Error::ReceivedSendType)
+        Err(::error::ErrorKind::ReceivedSendType.into())
     }
 
     fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> tl::Result<Self> {
-        Err(tl::Error::ReceivedSendType)
+        Err(::error::ErrorKind::ReceivedSendType.into())
     }
 }

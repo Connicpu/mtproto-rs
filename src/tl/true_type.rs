@@ -1,4 +1,3 @@
-use std::io::{Read, Write};
 use tl::{self, Type};
 use tl::parsing::{ConstructorId, Reader, Writer};
 
@@ -23,13 +22,13 @@ impl Type for True {
     }
 
     fn deserialize<R: Reader>(_: &mut R) -> tl::Result<Self> {
-        Err(tl::Error::BoxedAsBare)
+        Err(::error::ErrorKind::BoxedAsBare.into())
     }
 
     fn deserialize_boxed<R: Reader>(id: ConstructorId, _: &mut R) -> tl::Result<Self> {
         match id {
             True::SIGNATURE => Ok(True),
-            _ => Err(tl::Error::InvalidData),
+            _ => Err(::error::ErrorKind::InvalidData.into()),
         }
     }
 }
