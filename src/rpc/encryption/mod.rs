@@ -1,3 +1,4 @@
+use std::fmt;
 use std::io::{Cursor, Write};
 
 use byteorder::{LittleEndian, ByteOrder, WriteBytesExt};
@@ -37,10 +38,16 @@ fn sha1_and_or_pad(input: &[u8], prepend_sha1: bool, padding: Padding) -> Result
     Ok(ret)
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Default, Clone, Copy)]
 pub struct AesParams {
     key: [u8; 32],
     iv: [u8; 32],
+}
+
+impl fmt::Debug for AesParams {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "AesParams")
+    }
 }
 
 impl AesParams {
@@ -101,6 +108,12 @@ impl Clone for AuthKey {
 }
 
 impl Copy for AuthKey {}
+
+impl fmt::Debug for AuthKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "AuthKey(#{:08x})", self.fingerprint)
+    }
+}
 
 impl AuthKey {
     pub fn new(key_in: &[u8]) -> Result<AuthKey> {

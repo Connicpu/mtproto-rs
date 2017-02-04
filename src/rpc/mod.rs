@@ -48,7 +48,7 @@ impl Session {
         seq
     }
 
-    pub fn key_exchange_complete(&mut self, server_salt: u64, authorization_key: encryption::AuthKey) {
+    pub fn begin_encryption(&mut self, server_salt: u64, authorization_key: encryption::AuthKey) {
         self.server_salt = server_salt;
         self.auth_key = Some(authorization_key);
     }
