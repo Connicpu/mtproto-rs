@@ -10,11 +10,19 @@ pub mod functions;
 use error::Result;
 use self::functions::authz::Nonce;
 
+#[derive(Debug, Clone)]
+pub struct AppId {
+    pub api_id: i32,
+    pub api_hash: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct Session {
     session_id: u64,
     server_salt: u64,
     seq_no: u32,
     auth_key: Option<encryption::AuthKey>,
+    pub app_id: AppId,
 }
 
 #[derive(Debug, Clone)]
@@ -33,12 +41,13 @@ pub struct InboundPayload {
 pub type InboundMessage = ::std::result::Result<InboundPayload, i32>;
 
 impl Session {
-    pub fn new(session_id: u64) -> Session {
+    pub fn new(session_id: u64, app_id: AppId) -> Session {
         Session {
             session_id: session_id,
             server_salt: 0,
             seq_no: 0,
             auth_key: None,
+            app_id: app_id,
         }
     }
 

@@ -149,6 +149,16 @@ pub mod auth {
         pub phone_registered: bool,
         pub phone_invited: bool,
     }
+
+    #[derive(Debug, TLType)]
+    #[tl_id(_768d5f4d)]
+    pub struct SendCode {
+        pub phone_number: String,
+        pub sms_type: i32,
+        pub api_id: i32,
+        pub api_hash: String,
+        pub lang_code: String,
+    }
 }
 
 pub mod help {
