@@ -3,7 +3,7 @@ use std::io;
 use byteorder::{LittleEndian, ByteOrder};
 use openssl::{bn, hash, rsa};
 
-use error::Result;
+use error::{ErrorKind, Result};
 use super::{AuthKey, Padding, sha1_and_or_pad};
 
 #[derive(Debug)]
@@ -92,9 +92,6 @@ pub fn calculate_auth_key(g: u32, dh_prime: &[u8], g_a: &[u8]) -> Result<(AuthKe
     Ok((auth_key, g_b.to_vec()))
 }
 
-#[derive(Debug)]
-pub struct FactorizationFailure;
-
 fn isqrt(x: u64) -> u64 {
     let mut ret = (x as f64).sqrt().trunc() as u64;
     while ret * ret > x { ret -= 1; }
@@ -102,13 +99,13 @@ fn isqrt(x: u64) -> u64 {
     ret
 }
 
-pub fn decompose_pq(pq: u64) -> ::std::result::Result<(u32, u32), FactorizationFailure> {
+pub fn decompose_pq(pq: u64) -> Result<(u32, u32)> {
     let mut pq_sqrt = isqrt(pq);
     loop {
         let y_sqr = pq_sqrt * pq_sqrt - pq;
-        if y_sqr == 0 { return Err(FactorizationFailure) }
+        if y_sqr == 0 { return Err(ErrorKind::FactorizationFailure.into()) }
         let y = isqrt(y_sqr);
-        if y + pq_sqrt >= pq { return Err(FactorizationFailure) }
+        if y + pq_sqrt >= pq { return Err(ErrorKind::FactorizationFailure.into()) }
         if y * y != y_sqr {
             pq_sqrt += 1;
             continue;

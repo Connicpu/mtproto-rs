@@ -16,6 +16,15 @@ impl<R: Reader> Default for TLCtorMap<R> {
 pub trait TLObject: Any {
     fn tl_id(&self) -> Option<ConstructorId>;
     fn as_any(&self) -> &Any;
+    fn as_boxed_any(self: Box<Self>) -> Box<Any>;
+}
+
+pub fn downcast<T: TLObject>(b: Box<TLObject>) -> ::std::result::Result<Box<T>, Box<TLObject>> {
+    if b.as_any().is::<T>() {
+        Ok(b.as_boxed_any().downcast::<T>().unwrap())
+    } else {
+        Err(b)
+    }
 }
 
 impl<T: Type + Any> TLObject for T {
@@ -23,7 +32,8 @@ impl<T: Type + Any> TLObject for T {
         self.type_id()
     }
 
-    fn as_any(&self) -> &Any { self }
+    default fn as_any(&self) -> &Any { self }
+    default fn as_boxed_any(self: Box<Self>) -> Box<Any> { self }
 }
 
 #[derive(Debug)]
@@ -38,6 +48,7 @@ impl TLObject for UnreadableBag {
     }
 
     fn as_any(&self) -> &Any { self }
+    fn as_boxed_any(self: Box<Self>) -> Box<Any> { self }
 }
 
 impl Type for Box<TLObject> {
@@ -59,6 +70,16 @@ impl Type for Box<TLObject> {
 
     fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
         unimplemented!()
+    }
+}
+
+impl TLObject for Box<TLObject> {
+    fn as_any(&self) -> &Any {
+        (&**self).as_any()
+    }
+
+    fn as_boxed_any(self: Box<Self>) -> Box<Any> {
+        (*self).as_boxed_any()
     }
 }
 

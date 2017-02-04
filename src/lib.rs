@@ -1,4 +1,5 @@
-#![feature(associated_consts)]
+#![feature(associated_consts, specialization)]
+#![recursion_limit = "128"]
 
 extern crate byteorder;
 extern crate chrono;
@@ -27,6 +28,7 @@ pub mod error {
             WrongAuthKey {}
             InvalidLength {}
             Unknown {}
+            FactorizationFailure {}
         }
     }
 }
