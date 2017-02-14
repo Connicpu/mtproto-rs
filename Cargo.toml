@@ -15,5 +15,5 @@ crc = "1.2"
 rand = "0.3"
 
 [build-dependencies]
-syntex = "0.24"
+syntex = "0.25"
 tl_macros = { path = "tl_macros" }

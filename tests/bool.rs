@@ -6,6 +6,7 @@ use mtproto::tl::Bool;
 use mtproto::tl::parsing::{ReadContext, WriteContext};
 use byteorder::{ByteOrder, LittleEndian, WriteBytesExt};
 
+#[derive(Default)]
 struct BoolTest {
     true_buffer: [u8; 4],
     false_buffer: [u8; 4],
@@ -13,7 +14,7 @@ struct BoolTest {
 
 impl BoolTest {
     fn new() -> BoolTest {
-        let mut test: BoolTest = unsafe { std::mem::uninitialized() };
+        let mut test: BoolTest = Default::default();
         LittleEndian::write_u32(&mut test.true_buffer, 0x997275b5);
         LittleEndian::write_u32(&mut test.false_buffer, 0xbc799737);
         test
@@ -42,4 +43,3 @@ fn bool_deserialization() {
     let false_value: Bool = ReadContext::new(Cursor::new(&data.false_buffer[..])).read_generic().unwrap();
     assert_eq!(false_value, Bool(false));
 }
-
