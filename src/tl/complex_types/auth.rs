@@ -23,7 +23,7 @@ pub enum SentCode {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_f6b673a4)]
 pub struct Authorization {
     pub expires: i32,

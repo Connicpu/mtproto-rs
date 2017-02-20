@@ -1,7 +1,7 @@
 use super::*;
 use tl::Vector;
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum ForeignLink {
     #[tl_id(_133421f8)] Unknown,
     #[tl_id(_a7801f47)] Requested {
@@ -10,7 +10,7 @@ pub enum ForeignLink {
     #[tl_id(_1bea8ce1)] Mutual,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum MyLink {
     #[tl_id(_d22a1c60)] Empty,
     #[tl_id(_6c69efee)] Requested {
@@ -19,7 +19,7 @@ pub enum MyLink {
     #[tl_id(_c240ebd9)] Contact,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_eccea3f5)]
 pub struct Link {
     pub my_link: MyLink,
@@ -27,7 +27,7 @@ pub struct Link {
     pub user: User,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum Contacts {
     #[tl_id(_b74ba9d2)] NotModified,
     #[tl_id(_6f8b8cb2)] Contacts {
@@ -36,7 +36,7 @@ pub enum Contacts {
     }
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_ad524315)]
 pub struct ImportedContacts {
     pub imported: Vector<ImportedContact>,
@@ -44,7 +44,7 @@ pub struct ImportedContacts {
     pub users: Vector<User>,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum Blocked {
     #[tl_id(_1c138d15)] Blocked {
         blocked: Vector<ContactBlocked>,
@@ -57,14 +57,14 @@ pub enum Blocked {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_5649dcc5)]
 pub struct Suggested {
     pub results: Vector<ContactSuggested>,
     pub users: Vector<User>,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_566000e)]
 pub struct Found {
     pub results: Vector<ContactFound>,

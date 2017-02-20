@@ -159,6 +159,14 @@ pub mod auth {
         pub api_hash: String,
         pub lang_code: String,
     }
+
+    #[derive(Debug, TLType)]
+    #[tl_id(_bcd51581)]
+    pub struct SignIn {
+        pub phone_number: String,
+        pub phone_code_hash: String,
+        pub phone_code: String,
+    }
 }
 
 pub mod help {

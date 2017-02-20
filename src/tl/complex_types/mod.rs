@@ -12,14 +12,14 @@ pub mod upload;
 pub mod help;
 pub mod account;
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_c4b9f9bb)]
 pub struct Error {
     pub code: i32,
     pub text: String,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum InputPeer {
     #[tl_id(_7f3b18ea)] Empty,
     #[tl_id(_7da07ec9)] SelfPeer,
@@ -28,7 +28,7 @@ pub enum InputPeer {
     #[tl_id(_179be863)] Chat { chat_id: i32 },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum InputUser {
     #[tl_id(_b98886cf)] Empty,
     #[tl_id(_f7c1b13f)] SelfUser,
@@ -36,7 +36,7 @@ pub enum InputUser {
     #[tl_id(_655e74ff)] Foreign { user_id: i32, access_hash: i64 },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_f392b7f4)]
 pub struct InputContact {
     pub client_id: i64,
@@ -45,13 +45,13 @@ pub struct InputContact {
     pub last_name: String,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum InputFile {
     #[tl_id(_f52ff27f)] Normal { id: i64, parts: i32, name: String, md5_checksum: String },
     #[tl_id(_fa4f0bb5)] Big { id: i64, parts: i32, name: String },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum InputMedia {
     #[tl_id(_9664f57f)] Empty,
     #[tl_id(_2dc53a7d)] UploadedPhoto {
@@ -108,7 +108,7 @@ pub enum InputMedia {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum InputChatPhoto {
     #[tl_id(_1ca48f57)] Empty,
     #[tl_id(_94254732)] UploadedPhoto {
@@ -121,25 +121,25 @@ pub enum InputChatPhoto {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum InputGeoPoint {
     #[tl_id(_e4c123d6)] Empty,
     #[tl_id(_f3b7acc9)] Point { lat: f64, long: f64 },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum InputPhoto {
     #[tl_id(_1cd7bf0d)] Empty,
     #[tl_id(_fb95c6c4)] Photo { id: i64, access_hash: i64 },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum InputVideo {
     #[tl_id(_5508ec75)] Empty,
     #[tl_id(_ee579652)] Video { id: i64, access_hash: i64 },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum InputFileLocation {
     #[tl_id(_14637196)] File { volume_id: i64, local_id: i32, secret: i64 },
     #[tl_id(_3d0364ec)] Video { id: i64, access_hash: i64 },
@@ -148,13 +148,13 @@ pub enum InputFileLocation {
     #[tl_id(_4e45abe9)] Document { id: i64, access_hash: i64 },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum InputPhotoCrop {
     #[tl_id(_ade6b004)] Auto,
     #[tl_id(_d9915325)] Crop { left: f64, top: f64, width: f64 },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_770656a8)]
 pub struct InputAppEvent {
     pub time: f64,
@@ -163,13 +163,13 @@ pub struct InputAppEvent {
     pub data: String,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum Peer {
     #[tl_id(_9db1bc6d)] User { user_id: i32 },
     #[tl_id(_bad0e5bb)] Char { chat_id: i32 },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum FileLocation {
     #[tl_id(_7c596b46)] Unavailable {
         volume_id: i64,
@@ -184,7 +184,7 @@ pub enum FileLocation {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum User {
     #[tl_id(_200250ba)] Empty {
         id: i32
@@ -236,7 +236,7 @@ pub enum User {
     }
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum UserProfilePhoto {
     #[tl_id(_4f11bae1)] Empty,
     #[tl_id(_d559d8c8)] Photo {
@@ -246,7 +246,7 @@ pub enum UserProfilePhoto {
     }
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum UserStatus {
     #[tl_id(_09d05049)] Empty,
     #[tl_id(_edb93949)] Online { expires: i32 },
@@ -256,7 +256,7 @@ pub enum UserStatus {
     #[tl_id(_77ebc742)] LastMonth,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum Chat {
     #[tl_id(_9ba2d800)] Empty {
         id: i32,
@@ -277,7 +277,7 @@ pub enum Chat {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_630e61be)]
 pub struct ChatFull {
     pub id: i32,
@@ -286,7 +286,7 @@ pub struct ChatFull {
     pub notify_settings: PeerNotifySettings,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_c8d7493e)]
 pub struct ChatParticipant {
     pub user_id: i32,
@@ -294,7 +294,7 @@ pub struct ChatParticipant {
     pub date: i32,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum ChatParticipants {
     #[tl_id(_fd2bb8a)] Forbidden {
         chat_id: i32,
@@ -307,7 +307,7 @@ pub enum ChatParticipants {
     }
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum ChatPhoto {
     #[tl_id(_37c1011c)] Empty,
     #[tl_id(_6153276a)] Photo {
@@ -316,7 +316,7 @@ pub enum ChatPhoto {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum Message {
     #[tl_id(_83e5de54)] Empty {
         id: i32,
@@ -351,7 +351,7 @@ pub enum Message {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum MessageMedia {
     #[tl_id(_3ded6320)] Empty,
     #[tl_id(_c8c45a2a)] Photo(Photo),
@@ -370,7 +370,7 @@ pub enum MessageMedia {
     #[tl_id(_c6b68300)] Audio(Audio),
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum MessageAction {
     #[tl_id(_b6aef7b0)] Empty,
     #[tl_id(_a6638b9a)] ChatCreate {
@@ -392,7 +392,7 @@ pub enum MessageAction {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_ab3a99ac)]
 pub struct Dialog {
     pub peer: Peer,
@@ -401,7 +401,7 @@ pub struct Dialog {
     pub notify_settings: PeerNotifySettings,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum Photo {
     #[tl_id(_2331b22d)] Empty {
         id: i64
@@ -417,7 +417,7 @@ pub enum Photo {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum PhotoSize {
     #[tl_id(_e17e23c)] Empty {
         size_type: String,
@@ -436,7 +436,7 @@ pub enum PhotoSize {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum Video {
     #[tl_id(_c10658a8)] Empty {
         id: i64,
@@ -456,7 +456,7 @@ pub enum Video {
     }
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum GeoPoint {
     #[tl_id(_1117dd5f)] Empty,
     #[tl_id(_2049d70c)] Point {
@@ -465,7 +465,7 @@ pub enum GeoPoint {
     }
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum InputNotifyPeer {
     #[tl_id(_b8bc5b0c)] Peer(Peer),
     #[tl_id(_193b4417)] Users,
@@ -473,13 +473,13 @@ pub enum InputNotifyPeer {
     #[tl_id(_a429b886)] All,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum InputPeerNotifyEvents {
     #[tl_id(_f03064d8)] Empty,
     #[tl_id(_e86a2c74)] All,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_46a2ce98)]
 pub struct InputPeerNotifySettings {
     pub mute_until: i32,
@@ -488,13 +488,13 @@ pub struct InputPeerNotifySettings {
     pub events_mask: i32,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum PeerNotifyEvents {
     #[tl_id(_add53cb3)] Empty,
     #[tl_id(_6d1ded88)] All,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum PeerNotifySettings {
     #[tl_id(_70a68512)] Empty,
     #[tl_id(_8d5e11ee)] Settings {
@@ -505,7 +505,7 @@ pub enum PeerNotifySettings {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum WallPaper {
     #[tl_id(_ccb03657)] Photo {
         id: i32,
@@ -521,7 +521,7 @@ pub enum WallPaper {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum ReportReason {
     #[tl_id(_58dbcab8)] Spam,
     #[tl_id(_1e22c78d)] Violence,
@@ -529,7 +529,7 @@ pub enum ReportReason {
     #[tl_id(_e1746d0a)] Other(String),
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_771095da)]
 pub struct UserFull {
     pub user: User,
@@ -541,42 +541,42 @@ pub struct UserFull {
     pub real_last_name: String,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_f911c994)]
 pub struct Contact {
     pub user_id: i32,
     pub mutual: bool,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_d0028438)]
 pub struct ImportedContact {
     pub user_id: i32,
     pub client_id: i64,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_561bc879)]
 pub struct ContactBlocked {
     pub user_id: i32,
     pub date: i32,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_3de191a1)]
 pub struct ContactSuggested {
     pub user_id: i32,
     pub mutual_contacts: i32,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_d3680c61)]
 pub struct ContactStatus {
     pub user_id: i32,
     pub status: UserStatus,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum MessagesFilter {
     #[tl_id(_57e2f66c)] Empty,
     #[tl_id(_9609a51c)] Photos,
@@ -589,7 +589,7 @@ pub enum MessagesFilter {
     #[tl_id(_7ef0dd87)] Url,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum Update {
     #[tl_id(_13abdb3)] NewMessage {
         message: Message,
@@ -704,7 +704,7 @@ pub enum Update {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum Updates {
     #[tl_id(_e317af7e)] TooLong,
     #[tl_id(_d3f45784)] ShortMessage {
@@ -768,7 +768,7 @@ pub struct Config {
     pub disabled_features: Vector<DisabledFeature>,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_8e1a1775)]
 pub struct NearestDc {
     pub country: String,
@@ -776,7 +776,7 @@ pub struct NearestDc {
     pub nearest_dc: i32,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum EncryptedChat {
     #[tl_id(_ab7ec0a0)] Empty {
         id: i32,
@@ -811,14 +811,14 @@ pub enum EncryptedChat {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_f141b5e1)]
 pub struct InputEncryptedChat {
     pub chat_id: i32,
     pub access_hash: i64,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum EncryptedFile {
     #[tl_id(_c21f497e)] Empty,
     #[tl_id(_4a70994c)] File {
@@ -830,7 +830,7 @@ pub enum EncryptedFile {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum InputEncryptedFile {
     #[tl_id(_1837c364)] Empty,
     #[tl_id(_64bd0306)] Uploaded {
@@ -850,7 +850,7 @@ pub enum InputEncryptedFile {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum EncryptedMessage {
     #[tl_id(_ed18c118)] Message {
         random_id: i64,
@@ -867,7 +867,7 @@ pub enum EncryptedMessage {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum InputAudio {
     #[tl_id(_d95adc84)] Empty,
     #[tl_id(_77d440ff)] Audio {
@@ -876,7 +876,7 @@ pub enum InputAudio {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum InputDocument {
     #[tl_id(_72f0eaae)] Empty,
     #[tl_id(_18798952)] Document {
@@ -885,7 +885,7 @@ pub enum InputDocument {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum Audio {
     #[tl_id(_586988d8)] Empty {
         id: i64,
@@ -902,7 +902,7 @@ pub enum Audio {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum Document {
     #[tl_id(_36f8c871)] Empty {
         id: i64,
@@ -919,7 +919,7 @@ pub enum Document {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum NotifyPeer {
     #[tl_id(_9fd40bd8)] Peer {
         peer: Peer,
@@ -929,7 +929,7 @@ pub enum NotifyPeer {
     #[tl_id(_74d07c60)] All,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum SendMessageAction {
     #[tl_id(_16bf744e)] Typing,
     #[tl_id(_fd5ec8f5)] Cancel,
@@ -943,23 +943,23 @@ pub enum SendMessageAction {
     #[tl_id(_628cbc6f)] ChooseContact,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_ea879f95)]
 pub struct ContactFound {
     pub user_id: i32,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum InputPrivacyKey {
     #[tl_id(_4f96cb18)] StatusTimestamp,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum PrivacyKey {
     #[tl_id(_bc2eab30)] StatusTimestamp,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum InputPrivacyRule {
     #[tl_id(_d09e07b)] AllowContacts,
     #[tl_id(_184b35ce)] AllowAll,
@@ -973,7 +973,7 @@ pub enum InputPrivacyRule {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum PrivacyRule {
     #[tl_id(_fffe1bac)] AllowContacts,
     #[tl_id(_65427b82)] AllowAll,
@@ -987,20 +987,20 @@ pub enum PrivacyRule {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_554abb6f)]
 pub struct PrivacyRules {
     pub rules: Vector<PrivacyRule>,
     pub users: Vector<User>,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_b8d0afdf)]
 pub struct AccountDaysTTL {
     pub days: i32,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum DocumentAttribute {
     #[tl_id(_6c37c15c)] ImageSize {
         w: i32,
@@ -1030,7 +1030,7 @@ pub struct DisabledFeature {
 
 // End-to-end encryption types
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum DecryptedMessage {
     // ==Layer 8==
     #[tl_id(_1f814f1f)] Message_v8 {
@@ -1058,7 +1058,7 @@ pub enum DecryptedMessage {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum DecryptedMessageMedia {
     // ==Layer 8==
     #[tl_id(_89f5c4a)] Empty_v8,
@@ -1146,7 +1146,7 @@ pub enum DecryptedMessageMedia {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum DecryptedMessageAction {
     // ==Layer 8==
     #[tl_id(_a1733aec)] SetMessageTTL_v8 {
@@ -1195,7 +1195,7 @@ pub enum DecryptedMessageAction {
     #[tl_id(_a82fdd63)] Noop_v20,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum DecryptedMessageLayer {
     // ==Layer 17==
     #[tl_id(_1be31789)] Layer_v17 {
