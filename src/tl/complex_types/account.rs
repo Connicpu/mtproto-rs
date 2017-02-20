@@ -5,4 +5,4 @@ pub struct SentChangePhoneCode {
     pub send_call_timeout: i32,
 }
 
-// #[tl_id(_)] 
+// #[tl_id(_)]

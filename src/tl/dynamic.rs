@@ -1,90 +1,127 @@
 use super::{Result, Type};
-use std::io::{Read, Write};
+use std::fmt;
 use std::any::Any;
 use std::collections::HashMap;
-use tl::parsing::{ConstructorId, ReadContext, WriteContext};
+use tl::parsing::{ConstructorId, Reader, Writer};
 
-pub type TLCtor = fn(ConstructorId, &mut ReadContext<&mut Read>) -> Result<Box<TLObject>>;
+pub struct TLCtor<R: Reader>(pub fn(ConstructorId, &mut R) -> Result<Box<TLObject>>);
+pub struct TLCtorMap<R: Reader>(pub HashMap<ConstructorId, TLCtor<R>>);
 
-pub trait TLObject: Any {
-    fn tl_id(&self) -> ConstructorId;
-    fn serialize(&self, writer: &mut WriteContext<&mut Write>) -> Result<()>;
+impl<R: Reader> Default for TLCtorMap<R> {
+    fn default() -> TLCtorMap<R> {
+        TLCtorMap(Default::default())
+    }
 }
 
-pub trait TLObjectExt {
-    fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> Result<()>;
+pub trait TLObject: Any {
+    fn tl_id(&self) -> Option<ConstructorId>;
+    fn as_any(&self) -> &Any;
+    fn as_boxed_any(self: Box<Self>) -> Box<Any>;
+}
+
+pub fn downcast<T: TLObject>(b: Box<TLObject>) -> ::std::result::Result<Box<T>, Box<TLObject>> {
+    if b.as_any().is::<T>() {
+        Ok(b.as_boxed_any().downcast::<T>().unwrap())
+    } else {
+        Err(b)
+    }
 }
 
 impl<T: Type + Any> TLObject for T {
-    fn tl_id(&self) -> ConstructorId {
-        self.type_id().unwrap()
+    fn tl_id(&self) -> Option<ConstructorId> {
+        self.type_id()
     }
-    
-    fn serialize(&self, writer: &mut WriteContext<&mut Write>) -> Result<()> {
-        <T as Type>::serialize(self, writer)
+
+    default fn as_any(&self) -> &Any { self }
+    default fn as_boxed_any(self: Box<Self>) -> Box<Any> { self }
+}
+
+#[derive(Debug)]
+pub struct UnreadableBag {
+    pub tl_id: ConstructorId,
+    pub bytes: Vec<u8>,
+}
+
+impl TLObject for UnreadableBag {
+    fn tl_id(&self) -> Option<ConstructorId> {
+        Some(self.tl_id)
+    }
+
+    fn as_any(&self) -> &Any { self }
+    fn as_boxed_any(self: Box<Self>) -> Box<Any> { self }
+}
+
+impl Type for Box<TLObject> {
+    fn bare_type() -> bool {
+        true
+    }
+
+    fn type_id(&self) -> Option<ConstructorId> {
+        None
+    }
+
+    fn serialize<W: Writer>(&self, _: &mut W) -> Result<()> {
+        unimplemented!()
+    }
+
+    fn deserialize<R: Reader>(reader: &mut R) -> Result<Self> {
+        reader.read_polymorphic()
+    }
+
+    fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
+        unimplemented!()
     }
 }
 
-impl<T: TLObject> TLObjectExt for T {
-    fn serialize<W: Write>(&self, writer: &mut WriteContext<W>) -> Result<()> {
-        let (result, state) = {
-            let mut new_writer = writer.borrow_polymorphic();
-            let result = <T as TLObject>::serialize(self, &mut new_writer);
-            (result, new_writer.end_polymorphic())
-        };
-        writer.integrate_polymorphic(state);
-        result
+impl TLObject for Box<TLObject> {
+    fn as_any(&self) -> &Any {
+        (&**self).as_any()
+    }
+
+    fn as_boxed_any(self: Box<Self>) -> Box<Any> {
+        (*self).as_boxed_any()
+    }
+}
+
+impl fmt::Debug for TLObject {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "(boxed TLObject tl_id:{:?})", self.tl_id())
+    }
+}
+
+#[derive(Debug)]
+pub struct LengthAndObject(pub Box<TLObject>);
+
+impl Type for LengthAndObject {
+    fn bare_type() -> bool {
+        true
+    }
+
+    fn type_id(&self) -> Option<ConstructorId> {
+        None
+    }
+
+    fn serialize<W: Writer>(&self, _: &mut W) -> Result<()> {
+        unimplemented!()
+    }
+
+    fn deserialize<R: Reader>(reader: &mut R) -> Result<Self> {
+        let len: u32 = reader.read_bare()?;
+        let ret = reader.take(len as usize).read_polymorphic()?;
+        Ok(LengthAndObject(ret))
+    }
+
+    fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
+        unimplemented!()
     }
 }
 
 pub trait TLDynamic: TLObject {
-    fn register_ctors(cstore: &mut ClassStore);
+    fn deserialize<R: Reader>(id: ConstructorId, reader: &mut R) -> Result<Box<TLObject>>;
 }
 
-pub struct ClassStore {
-    ctors: HashMap<ConstructorId, TLCtor>,
-}
-
-impl ClassStore {
-    pub fn make_store() -> ClassStore {
-        use tl::complex_types::*;
-        use tl::Null;
-        let mut store = ClassStore { ctors: HashMap::new() };
-        
-        Error::register_ctors(&mut store);
-        DecryptedMessage::register_ctors(&mut store);
-        Config::register_ctors(&mut store);
-        DecryptedMessageLayer::register_ctors(&mut store);
-        Message::register_ctors(&mut store);
-        Null::register_ctors(&mut store);
-        Updates::register_ctors(&mut store);
-        Video::register_ctors(&mut store);
-        Audio::register_ctors(&mut store);
-        Document::register_ctors(&mut store);
-        Photo::register_ctors(&mut store);
-        PhotoSize::register_ctors(&mut store);
-        
-        store
-    }
-    
-    pub fn add_ctor(&mut self, id: ConstructorId, ctor: TLCtor) {
-        self.ctors.insert(id, ctor);
-    }
-    
-    pub fn deserialize<R: Read>(&self, reader: &mut ReadContext<R>) -> Result<Box<TLObject>> {
-        let id = try!(reader.read_bare());
-        let ctor = match self.ctors.get(&id) {
-            Some(ctor) => ctor,
-            None => return Err(super::Error::UnknownType)
-        };
-        
-        let (result, state) = {
-            let mut new_reader = reader.borrow_polymorphic();
-            let result = ctor(id, &mut new_reader);
-            (result, new_reader.end_polymorphic())
-        };
-        reader.integrate_polymorphic(state);
-        
-        result
+impl<T: TLObject + Type> TLDynamic for T {
+    fn deserialize<R: Reader>(id: ConstructorId, reader: &mut R) -> Result<Box<TLObject>> {
+        Ok(Box::new(<T as Type>::deserialize_boxed(id, reader)?))
     }
 }

@@ -161,4 +161,4 @@ pub enum AllStickers {
     },
 }
 
-// #[tl_id(_)] 
+// #[tl_id(_)]

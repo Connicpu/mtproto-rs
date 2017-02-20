@@ -1,6 +1,5 @@
-use std::io::{Read, Write};
 use tl::{self, Type};
-use tl::parsing::{ConstructorId, ReadContext, WriteContext};
+use tl::parsing::{ConstructorId, Reader, Writer};
 
 #[derive(Copy, Clone, Debug)]
 pub struct True;
@@ -13,23 +12,23 @@ impl Type for True {
     fn bare_type() -> bool {
         false
     }
-    
+
     fn type_id(&self) -> Option<ConstructorId> {
         Some(True::SIGNATURE)
     }
-    
-    fn serialize<W: Write>(&self, _: &mut WriteContext<W>) -> tl::Result<()> {
+
+    fn serialize<W: Writer>(&self, _: &mut W) -> tl::Result<()> {
         Ok(())
     }
-    
-    fn deserialize<R: Read>(_: &mut ReadContext<R>) -> tl::Result<Self> {
-        Err(tl::Error::BoxedAsBare)
+
+    fn deserialize<R: Reader>(_: &mut R) -> tl::Result<Self> {
+        Err(::error::ErrorKind::BoxedAsBare.into())
     }
-    
-    fn deserialize_boxed<R: Read>(id: ConstructorId, _: &mut ReadContext<R>) -> tl::Result<Self> {
+
+    fn deserialize_boxed<R: Reader>(id: ConstructorId, _: &mut R) -> tl::Result<Self> {
         match id {
             True::SIGNATURE => Ok(True),
-            _ => Err(tl::Error::InvalidData),
+            _ => Err(::error::ErrorKind::InvalidData.into()),
         }
     }
 }

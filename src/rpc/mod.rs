@@ -1,96 +1,181 @@
 use std::io;
+
 use chrono::{UTC, Timelike};
-use byteorder;
+use byteorder::{LittleEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
+use openssl::hash;
 
 pub mod encryption;
 pub mod functions;
 
+use error::Result;
+use self::functions::authz::Nonce;
+
+#[derive(Debug, Clone)]
+pub struct AppId {
+    pub api_id: i32,
+    pub api_hash: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct Session {
     session_id: u64,
     server_salt: u64,
-    message_id_seq: u16,
-    message_id_last_nano: u16,
     seq_no: u32,
-    auth_key: [u8; 256],
+    auth_key: Option<encryption::AuthKey>,
+    pub app_id: AppId,
 }
 
+#[derive(Debug, Clone)]
+pub struct OutboundMessage {
+    pub message_id: u64,
+    pub message: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+pub struct InboundPayload {
+    pub message_id: u64,
+    pub payload: Vec<u8>,
+    pub was_encrypted: bool,
+}
+
+pub type InboundMessage = ::std::result::Result<InboundPayload, i32>;
+
 impl Session {
-    pub fn new(authorization_key: &[u8; 256]) -> Session {
+    pub fn new(session_id: u64, app_id: AppId) -> Session {
         Session {
-            session_id: 0,
+            session_id: session_id,
             server_salt: 0,
-            message_id_seq: 0,
-            message_id_last_nano: 0,
             seq_no: 0,
-            auth_key: *authorization_key,
+            auth_key: None,
+            app_id: app_id,
         }
     }
-    
-    pub fn get_session_id(&self) -> u64 {
-        self.session_id
-    }
-    
-    pub fn get_salt(&self) -> u64 {
-        self.server_salt
-    }
-    
-    pub fn next_seq_no(&self) -> u32 {
-        self.seq_no * 2
-    }
-    
-    pub fn next_content_seq_no(&mut self) -> u32 {
+
+    fn next_content_seq_no(&mut self) -> u32 {
         let seq = self.seq_no * 2;
         self.seq_no += 1;
         seq
     }
-    
-    pub fn get_authorization_key(&self) -> &[u8; 256] {
-        &self.auth_key
+
+    pub fn begin_encryption(&mut self, server_salt: u64, authorization_key: encryption::AuthKey) {
+        self.server_salt = server_salt;
+        self.auth_key = Some(authorization_key);
     }
-    
-    pub fn next_message_id(&mut self) -> u64 {
+
+    fn next_message_id(&mut self) -> u64 {
         let time = UTC::now();
-        let timestamp = time.timestamp();
-        let nano = time.nanosecond();
-        
-        let nano_bits = (nano >> 14) as u16 & 0xFFFC;
-        // For the highly unlikely case that the nanosecond is the same
-        if nano_bits == self.message_id_last_nano {
-            self.message_id_seq += 1;
+        let timestamp = time.timestamp() as u64;
+        let nano = time.nanosecond() as u64;
+        (timestamp << 32) | (nano & !3)
+    }
+
+    pub fn encrypted_payload(&mut self, payload: &[u8]) -> Result<OutboundMessage> {
+        let key = self.auth_key.unwrap();
+        let mut ret = OutboundMessage {
+            message_id: self.next_message_id(),
+            message: vec![],
+        };
+        {
+            let message = &mut ret.message;
+            message.write_u64::<LittleEndian>(self.server_salt).unwrap();
+            message.write_u64::<LittleEndian>(self.session_id).unwrap();
+            message.write_u64::<LittleEndian>(ret.message_id).unwrap();
+            message.write_u32::<LittleEndian>(self.next_content_seq_no() | 1).unwrap();
+            message.write_u32::<LittleEndian>(payload.len() as u32).unwrap();
+            message.extend(payload);
+        }
+        ret.message = key.encrypt_message(&ret.message)?;
+        Ok(ret)
+    }
+
+    pub fn plain_payload(&mut self, payload: &[u8]) -> OutboundMessage {
+        let mut ret = OutboundMessage {
+            message_id: self.next_message_id(),
+            message: vec![],
+        };
+        {
+            let message = &mut ret.message;
+            message.write_u64::<LittleEndian>(0).unwrap();
+            message.write_u64::<LittleEndian>(ret.message_id).unwrap();
+            message.write_u32::<LittleEndian>(payload.len() as u32).unwrap();
+            message.extend(payload);
+        }
+        ret
+    }
+
+    pub fn assemble_payload(&mut self, payload: &[u8], encrypt: bool) -> Result<OutboundMessage> {
+        if encrypt {
+            self.encrypted_payload(payload)
         } else {
-            self.message_id_last_nano = nano_bits;
-            self.message_id_seq = 0b0101010101010101; // too many zeroes = ignored, so
-        }
-        let id = self.message_id_seq;
-        
-        // [ lower 32-bits of unix time | bits 13..30 of the nanosecond (14 total) | id (16 total) | 0b00 ]
-        ((timestamp as u64) << 32) |
-        ((nano_bits as u64) << 16) |
-        ((id as u64) << 2)
-    }
-}
-
-pub type RpcRes<T> = Result<T, RpcError>;
-
-pub enum RpcError {
-    Io(io::Error),
-    WrongAuthKey,
-    InvalidLength,
-    Unknown,
-}
-
-impl From<io::Error> for RpcError {
-    fn from(io: io::Error) -> RpcError {
-        RpcError::Io(io)
-    }
-}
-
-impl From<byteorder::Error> for RpcError {
-    fn from(bo: byteorder::Error) -> RpcError {
-        match bo {
-            byteorder::Error::Io(io) => From::from(io),
-            _ => RpcError::Unknown,
+            Ok(self.plain_payload(payload))
         }
     }
+
+    pub fn process_message(&self, message: &[u8]) -> Result<InboundMessage> {
+        if message.len() == 4 {
+            return Ok(Err(LittleEndian::read_i32(&message)));
+        } else if message.len() < 8 {
+            panic!("bad message");
+        }
+
+        let mut cursor = io::Cursor::new(message);
+        let auth_key_id = cursor.read_u64::<LittleEndian>().unwrap();
+        if auth_key_id != 0 {
+            cursor.into_inner();
+            return self.decrypt_message(message);
+        }
+
+        let message_id = cursor.read_u64::<LittleEndian>().unwrap();
+        let len = cursor.read_u32::<LittleEndian>().unwrap() as usize;
+        let pos = cursor.position() as usize;
+        cursor.into_inner();
+        let payload = &message[pos..pos+len];
+        Ok(Ok(InboundPayload {
+            message_id: message_id,
+            payload: payload.into(),
+            was_encrypted: false,
+        }))
+    }
+
+    fn decrypt_message(&self, message: &[u8]) -> Result<InboundMessage> {
+        let decrypted = self.auth_key.unwrap().decrypt_message(message)?;
+        let mut cursor = io::Cursor::new(&decrypted[..]);
+        let server_salt = cursor.read_u64::<LittleEndian>().unwrap();
+        let session_id = cursor.read_u64::<LittleEndian>().unwrap();
+        let message_id = cursor.read_u64::<LittleEndian>().unwrap();
+        let seq_no = cursor.read_u32::<LittleEndian>().unwrap();
+        let len = cursor.read_u32::<LittleEndian>().unwrap() as usize;
+        let pos = cursor.position() as usize;
+        cursor.into_inner();
+        let payload = &decrypted[pos..pos+len];
+        let computed_message_hash = sha1_bytes(&[&decrypted[..pos+len]])?;
+        let computed_message_key = &computed_message_hash[4..20];
+        assert!(&message[8..24] == computed_message_key);
+        assert!(server_salt == self.server_salt);
+        assert!(session_id == self.session_id);
+        Ok(Ok(InboundPayload {
+            message_id: message_id,
+            payload: payload.into(),
+            was_encrypted: true,
+        }))
+    }
 }
 
+fn sha1_bytes(parts: &[&[u8]]) -> Result<Vec<u8>> {
+    let mut hasher = hash::Hasher::new(hash::MessageDigest::sha1())?;
+    for part in parts {
+        hasher.update(part)?;
+    }
+    Ok(hasher.finish()?)
+}
+
+fn sha1_nonces(nonces: &[Nonce]) -> Result<Vec<u8>> {
+    let mut hasher = hash::Hasher::new(hash::MessageDigest::sha1())?;
+    for nonce in nonces {
+        let mut tmp = [0u8; 16];
+        LittleEndian::write_u64(&mut tmp[..8], nonce.0);
+        LittleEndian::write_u64(&mut tmp[8..], nonce.1);
+        hasher.update(&tmp)?;
+    }
+    Ok(hasher.finish()?)
+}

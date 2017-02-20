@@ -1,187 +1,87 @@
-use super::{Session, RpcRes, RpcError};
-use std::io::{Read, Write, Cursor};
-use crypto::digest::Digest;
-use crypto::sha1::Sha1;
-use crypto::aessafe::{AesSafe256Encryptor, AesSafe256Decryptor};
-use byteorder::{ByteOrder, LittleEndian, WriteBytesExt, ReadBytesExt};
+use std::fmt;
+use std::io::{Cursor, Write};
 
-pub mod ige;
+use byteorder::{LittleEndian, ByteOrder, WriteBytesExt};
+use openssl::{aes, symm};
 
-type MsgKey = [u8; 16];
-const PRELUDE_LEN: usize = 32;
+use error::Result;
+use rpc::functions::authz::{Nonce, PQInnerData};
+use rpc::{sha1_bytes, sha1_nonces};
 
-pub fn encrypt_message<W: Write>(session: &mut Session, payload: &[u8], stream: &mut W) -> RpcRes<()> {
-    let unencrypted = Unencrypted {
-        salt: session.get_salt(),
-        session_id: session.get_session_id(),
-        message_id: session.next_message_id(),
-        seq_no: session.next_seq_no(),
-        payload: payload,
+pub mod asymm;
+
+enum Padding {
+    Total255,
+    Mod16,
+}
+
+fn sha1_and_or_pad(input: &[u8], prepend_sha1: bool, padding: Padding) -> Result<Vec<u8>> {
+    let mut ret = if prepend_sha1 {
+        sha1_bytes(&[input])?
+    } else {
+        vec![]
     };
-    
-    do_encrypt_message(session, &unencrypted, stream)
-}
-
-pub fn encrypt_content_message<W: Write>(session: &mut Session, payload: &[u8], stream: &mut W) -> RpcRes<()> {
-    let unencrypted = Unencrypted {
-        salt: session.get_salt(),
-        session_id: session.get_session_id(),
-        message_id: session.next_message_id(),
-        seq_no: session.next_content_seq_no(),
-        payload: payload,
-    };
-    
-    do_encrypt_message(session, &unencrypted, stream)
-}
-
-fn do_encrypt_message<W: Write>(session: &Session, unencrypted: &Unencrypted, stream: &mut W) -> RpcRes<()> {
-    let (msg_key, msg_len) = try!(make_message_key(unencrypted));
-    let AuthKey { key_id, aes_key, aes_iv } = make_client_auth_key(session, &msg_key);
-    
-    try!(stream.write_all(&key_id));
-    try!(stream.write_all(&msg_key));
-    try!(stream.write_u32::<LittleEndian>(msg_len as u32));
-    
-    let aes = AesSafe256Encryptor::new(&aes_key);
-    let mut encryptor = ige::IgeStream::new(stream, ige::IgeEncryptor::new(aes, &aes_iv));
-    try!(push_message(&mut encryptor, unencrypted));
-    
-    Ok(())
-}
-
-pub fn decrypt_message<R: Read>(session: &Session, stream: &mut R) -> RpcRes<Vec<u8>> {
-    let mut key_id: [u8; 8] = Default::default();
-    let mut msg_key: MsgKey = Default::default();
-    
-    try!(stream.read_exact(&mut key_id));
-    try!(stream.read_exact(&mut msg_key));
-    
-    let AuthKey { key_id: my_key_id, aes_key, aes_iv } = make_client_auth_key(session, &msg_key);
-    if key_id != my_key_id {
-        return Err(RpcError::WrongAuthKey);
+    ret.extend(input);
+    match padding {
+        Padding::Total255 => {
+            while ret.len() < 255 {
+                ret.push(0);
+            }
+        },
+        Padding::Mod16 if ret.len() % 16 != 0 => {
+            for _ in 0..16 - (ret.len() % 16) {
+                ret.push(0);
+            }
+        },
+        _ => (),
     }
-    
-    let payload_length = try!(stream.read_u32::<LittleEndian>()) as usize;
-    if payload_length % ige::BLOCK_SIZE != 0 {
-        return Err(RpcError::InvalidLength);
-    }
-    
-    let mut enc_buf = [0; ige::BLOCK_SIZE];
-    let mut prelude_buffer = [0; PRELUDE_LEN];
-    let mut decrypted_buffer = vec![0; payload_length - PRELUDE_LEN];
-    let mut decryptor = ige::IgeDecryptor::new(
-        AesSafe256Decryptor::new(&aes_key),
-        &aes_iv,
-    );
-    
-    /* decrypt the data */ {
-        let pre_chunks = prelude_buffer.chunks_mut(ige::BLOCK_SIZE);
-        let dec_chunks = decrypted_buffer.chunks_mut(ige::BLOCK_SIZE);
-        for decrypted in pre_chunks.chain(dec_chunks) {
-            try!(stream.read_exact(&mut enc_buf));
-            decryptor.decrypt_block(&enc_buf, decrypted);
-        }
-    }
-    
-    // TODO: Read the prelude and validate the message (plus remove padding)
-    
-    Ok(decrypted_buffer)
+    Ok(ret)
 }
 
-#[derive(Default)]
-struct AuthKey {
-    pub key_id: [u8; 8],
-    pub aes_key: [u8; 32],
-    pub aes_iv: [u8; 32],
+#[derive(Default, Clone, Copy)]
+pub struct AesParams {
+    key: [u8; 32],
+    iv: [u8; 32],
 }
 
-struct Unencrypted<'a> {
-    salt: u64,
-    session_id: u64,
-    message_id: u64,
-    seq_no: u32,
-    payload: &'a [u8],
-}
-
-trait MessagePush {
-    fn push(&mut self, bytes: &[u8]) -> RpcRes<()>;
-    
-    fn push_padding(&mut self, bytes: &[u8]) -> RpcRes<usize> {
-        try!(self.push(bytes));
-        Ok(bytes.len())
-    }
-    
-    fn push_u32(&mut self, val: u32) -> RpcRes<()> {
-        let mut temp_buf = [0; 4];
-        LittleEndian::write_u32(&mut temp_buf, val);
-        self.push(&temp_buf)
-    }
-    
-    fn push_u64(&mut self, val: u64) -> RpcRes<()> {
-        let mut temp_buf = [0; 8];
-        LittleEndian::write_u64(&mut temp_buf, val);
-        self.push(&temp_buf)
+impl fmt::Debug for AesParams {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "AesParams")
     }
 }
 
-impl MessagePush for Sha1 {
-    fn push(&mut self, bytes: &[u8]) -> RpcRes<()> {
-        self.input(bytes);
-        Ok(())
+impl AesParams {
+    fn run_ige(mut self, input: &[u8], mode: symm::Mode) -> Result<Vec<u8>> {
+        let key = match mode {
+            symm::Mode::Encrypt => aes::AesKey::new_encrypt(&self.key).unwrap(),
+            symm::Mode::Decrypt => aes::AesKey::new_decrypt(&self.key).unwrap(),
+        };
+        let mut output = vec![0; input.len()];
+        aes::aes_ige(input, &mut output, &key, &mut self.iv, mode);
+        Ok(output)
     }
-    
-    fn push_padding(&mut self, bytes: &[u8]) -> RpcRes<usize> {
-        Ok(bytes.len())
-    }
-}
 
-impl<W: Write> MessagePush for ige::IgeStream<W, ige::IgeEncryptor<AesSafe256Encryptor>> {
-    fn push(&mut self, bytes: &[u8]) -> RpcRes<()> {
-        try!(self.write(bytes));
-        Ok(())
+    pub fn ige_encrypt(self, decrypted: &[u8], prepend_sha1: bool) -> Result<Vec<u8>> {
+        let input = sha1_and_or_pad(decrypted, prepend_sha1, Padding::Mod16)?;
+        self.run_ige(&input, symm::Mode::Encrypt)
     }
-}
 
-fn push_message<MS: MessagePush>(stream: &mut MS, payload: &Unencrypted) -> RpcRes<usize> {
-    try!(stream.push_u64(payload.salt));
-    try!(stream.push_u64(payload.session_id));
-    try!(stream.push_u64(payload.message_id));
-    try!(stream.push_u32(payload.seq_no));
-    try!(stream.push_u32(payload.payload.len() as u32));
-    try!(stream.push(payload.payload));
-    
-    let inv_pad = payload.payload.len() % 16;
-    let mut extra_len = 0;
-    if inv_pad != 0 {
-        let padding = [0; 15];
-        extra_len = try!(stream.push_padding(&padding[0..extra_len]));
+    pub fn ige_decrypt(self, encrypted: &[u8]) -> Result<Vec<u8>> {
+        self.run_ige(encrypted, symm::Mode::Decrypt)
     }
-    
-    Ok(32 + payload.payload.len() + extra_len)
-}
 
-fn make_message_key(payload: &Unencrypted) -> RpcRes<(MsgKey, usize)> {
-    let mut sha1 = Sha1::new();
-    let msg_len = try!(push_message(&mut sha1, payload));
-    
-    let mut temp_buf = [0; 20];
-    let mut message_key = [0; 16];
-    sha1.result(&mut temp_buf);
-    message_key.clone_from_slice(&temp_buf[0..16]);
-    
-    Ok((message_key, msg_len))
-}
-
-fn sha1(parts: &[&[u8]]) -> [u8; 20] {
-    let mut hasher = Sha1::new();
-    
-    for part in parts {
-        hasher.input(*part);
+    pub fn from_pq_inner_data(data: &PQInnerData) -> Result<AesParams> {
+        let sha1_a = sha1_nonces(&[data.new_nonce.0, data.new_nonce.1, data.server_nonce])?;
+        let sha1_b = sha1_nonces(&[data.server_nonce, data.new_nonce.0, data.new_nonce.1])?;
+        let sha1_c = sha1_nonces(&[
+            data.new_nonce.0, data.new_nonce.1, data.new_nonce.0, data.new_nonce.1])?;
+        let mut tmp = [0u8; 8];
+        LittleEndian::write_u64(&mut tmp, (data.new_nonce.0).0);
+        let mut ret: AesParams = Default::default();
+        set_slice_parts(&mut ret.key, &[&sha1_a, &sha1_b[..12]]);
+        set_slice_parts(&mut ret.iv, &[&sha1_b[12..], &sha1_c, &tmp[..4]]);
+        Ok(ret)
     }
-    
-    let mut result = [0; 20];
-    hasher.result(&mut result);
-    result
 }
 
 fn set_slice_parts(result: &mut [u8], parts: &[&[u8]]) {
@@ -191,21 +91,95 @@ fn set_slice_parts(result: &mut [u8], parts: &[&[u8]]) {
     }
 }
 
-fn make_client_auth_key(session: &Session, msg_key: &[u8; 16]) -> AuthKey {
-    let auth_key = session.get_authorization_key();
-    
-    let sha1_a = sha1(&[ msg_key, &auth_key[0..32] ]);
-    let sha1_b = sha1(&[ &auth_key[32..48], msg_key, &auth_key[48..64] ]);
-    let sha1_c = sha1(&[ &auth_key[64..96], msg_key ]);
-    let sha1_d = sha1(&[ msg_key, &auth_key[96..128] ]);
-    
-    let key_id_raw = sha1(&[ &auth_key[..] ]);
-    let aes_key_raw = [ &sha1_a[0..8], &sha1_b[8..20], &sha1_c[4..16] ];
-    let aes_iv_raw = [ &sha1_a[8..20], &sha1_b[0..8], &sha1_c[16..20], &sha1_d[0..8] ];
-    
-    let mut result: AuthKey = Default::default();
-    set_slice_parts(&mut result.key_id, &[ &key_id_raw[0..8] ]);
-    set_slice_parts(&mut result.aes_key, &aes_key_raw);
-    set_slice_parts(&mut result.aes_iv, &aes_iv_raw);
-    result
+pub struct AuthKey {
+    auth_key: [u8; 256],
+    aux_hash: u64,
+    fingerprint: u64,
+}
+
+impl Clone for AuthKey {
+    fn clone(&self) -> AuthKey {
+        AuthKey {
+            auth_key: self.auth_key,
+            aux_hash: self.aux_hash,
+            fingerprint: self.fingerprint,
+        }
+    }
+}
+
+impl Copy for AuthKey {}
+
+impl fmt::Debug for AuthKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "AuthKey(#{:08x})", self.fingerprint)
+    }
+}
+
+impl AuthKey {
+    pub fn new(key_in: &[u8]) -> Result<AuthKey> {
+        let mut key = [0u8; 256];
+        key.copy_from_slice(key_in);
+        let sha1 = sha1_bytes(&[key_in])?;
+        let aux_hash = LittleEndian::read_u64(&sha1[0..8]);
+        let fingerprint = LittleEndian::read_u64(&sha1[12..20]);
+        Ok(AuthKey {
+            auth_key: key,
+            aux_hash: aux_hash,
+            fingerprint: fingerprint,
+        })
+    }
+
+    fn generate_message_aes_params(&self, msg_key: &[u8], mode: symm::Mode) -> Result<AesParams> {
+        let mut pos = match mode {
+            symm::Mode::Encrypt => 0,
+            symm::Mode::Decrypt => 8,
+        };
+        let mut auth_key_take = |len| {
+            let ret = &self.auth_key[pos..pos+len];
+            pos += len;
+            ret
+        };
+        let sha1_a = sha1_bytes(&[msg_key, auth_key_take(32)])?;
+        let sha1_b = sha1_bytes(&[auth_key_take(16), msg_key, auth_key_take(16)])?;
+        let sha1_c = sha1_bytes(&[auth_key_take(32), msg_key])?;
+        let sha1_d = sha1_bytes(&[msg_key, auth_key_take(32)])?;
+
+        let mut ret: AesParams = Default::default();
+        set_slice_parts(&mut ret.key, &[&sha1_a[0..8], &sha1_b[8..20], &sha1_c[4..16]]);
+        set_slice_parts(&mut ret.iv, &[&sha1_a[8..20], &sha1_b[0..8], &sha1_c[16..20], &sha1_d[0..8]]);
+        Ok(ret)
+    }
+
+    pub fn new_nonce_hash(&self, which: u8, new_nonce: (Nonce, Nonce)) -> Result<Nonce> {
+        let mut input = [0u8; 41];
+        {
+            let mut cursor = Cursor::new(&mut input[..]);
+            cursor.write_u64::<LittleEndian>((new_nonce.0).0).unwrap();
+            cursor.write_u64::<LittleEndian>((new_nonce.0).1).unwrap();
+            cursor.write_u64::<LittleEndian>((new_nonce.1).0).unwrap();
+            cursor.write_u64::<LittleEndian>((new_nonce.1).1).unwrap();
+            cursor.write_u8(which).unwrap();
+            cursor.write_u64::<LittleEndian>(self.aux_hash).unwrap();
+        }
+        let sha1 = sha1_bytes(&[&input])?;
+        Ok((LittleEndian::read_u64(&sha1[4..12]), LittleEndian::read_u64(&sha1[12..20])))
+    }
+
+    pub fn encrypt_message(&self, message: &[u8]) -> Result<Vec<u8>> {
+        let message_hash = sha1_bytes(&[message])?;
+        let message_key = &message_hash[4..20];
+        let aes = self.generate_message_aes_params(message_key, symm::Mode::Encrypt)?;
+        let mut ret = vec![0u8; 8];
+        LittleEndian::write_u64(&mut ret, self.fingerprint);
+        ret.extend(message_key);
+        ret.extend(aes.ige_encrypt(message, false)?);
+        Ok(ret)
+    }
+
+    pub fn decrypt_message(&self, message: &[u8]) -> Result<Vec<u8>> {
+        assert!(LittleEndian::read_u64(&message[..8]) == self.fingerprint);
+        let message_key = &message[8..24];
+        let aes = self.generate_message_aes_params(message_key, symm::Mode::Decrypt)?;
+        aes.ige_decrypt(&message[24..])
+    }
 }
