@@ -1,6 +1,6 @@
 use std::io;
 
-use chrono::{UTC, Timelike};
+use chrono::{Duration, UTC, Timelike};
 use byteorder::{LittleEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
 use openssl::hash;
 
@@ -9,6 +9,7 @@ pub mod functions;
 
 use error::Result;
 use self::functions::authz::Nonce;
+use self::functions::FutureSalt;
 
 #[derive(Debug, Clone)]
 pub struct AppId {
@@ -19,7 +20,7 @@ pub struct AppId {
 #[derive(Debug, Clone)]
 pub struct Session {
     session_id: u64,
-    server_salt: u64,
+    server_salts: Vec<FutureSalt>,
     seq_no: u32,
     auth_key: Option<encryption::AuthKey>,
     pub app_id: AppId,
@@ -44,7 +45,7 @@ impl Session {
     pub fn new(session_id: u64, app_id: AppId) -> Session {
         Session {
             session_id: session_id,
-            server_salt: 0,
+            server_salts: vec![],
             seq_no: 0,
             auth_key: None,
             app_id: app_id,
@@ -57,8 +58,24 @@ impl Session {
         seq
     }
 
+    fn latest_server_salt(&mut self) -> u64 {
+        let time = UTC::now();
+        self.server_salts.retain(|s| &s.valid_until > &time);
+        self.server_salts.first().unwrap().salt
+    }
+
+    pub fn add_server_salts(&mut self, salts: &[FutureSalt]) {
+        self.server_salts.extend(salts.into_iter().cloned());
+        self.server_salts.sort_by(|a, b| a.valid_since.cmp(&b.valid_since));
+    }
+
     pub fn begin_encryption(&mut self, server_salt: u64, authorization_key: encryption::AuthKey) {
-        self.server_salt = server_salt;
+        let time = UTC::now();
+        self.server_salts.push(FutureSalt {
+            valid_until: time.clone() + Duration::minutes(10),
+            valid_since: time,
+            salt: server_salt,
+        });
         self.auth_key = Some(authorization_key);
     }
 
@@ -77,7 +94,8 @@ impl Session {
         };
         {
             let message = &mut ret.message;
-            message.write_u64::<LittleEndian>(self.server_salt).unwrap();
+            let salt = self.latest_server_salt();
+            message.write_u64::<LittleEndian>(salt).unwrap();
             message.write_u64::<LittleEndian>(self.session_id).unwrap();
             message.write_u64::<LittleEndian>(ret.message_id).unwrap();
             message.write_u32::<LittleEndian>(self.next_content_seq_no() | 1).unwrap();
@@ -151,7 +169,7 @@ impl Session {
         let computed_message_hash = sha1_bytes(&[&decrypted[..pos+len]])?;
         let computed_message_key = &computed_message_hash[4..20];
         assert!(&message[8..24] == computed_message_key);
-        assert!(server_salt == self.server_salt);
+        assert!(self.server_salts.iter().any(|s| s.salt == server_salt));
         assert!(session_id == self.session_id);
         Ok(Ok(InboundPayload {
             message_id: message_id,

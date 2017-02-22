@@ -2,6 +2,7 @@ use std;
 use std::io::{Read, Write};
 use tl::parsing::{ConstructorId, Reader, Writer};
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
+use chrono::{DateTime, TimeZone, UTC};
 
 pub use super::error::{Error, ErrorKind, Result};
 #[doc(inline)]
@@ -349,5 +350,28 @@ impl Type for () {
 
     fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
         Ok(())
+    }
+}
+
+impl Type for DateTime<UTC> {
+    fn bare_type() -> bool {
+        true
+    }
+
+    fn type_id(&self) -> Option<ConstructorId> {
+        None
+    }
+
+    fn serialize<W: Writer>(&self, writer: &mut W) -> Result<()> {
+        (self.timestamp() as u32).serialize(writer)
+    }
+
+    fn deserialize<R: Reader>(reader: &mut R) -> Result<Self> {
+        let ts = u32::deserialize(reader)?;
+        Ok(UTC.timestamp(ts as i64, 0))
+    }
+
+    fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
+        Err(ErrorKind::PrimitiveAsPolymorphic.into())
     }
 }

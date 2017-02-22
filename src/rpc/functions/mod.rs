@@ -1,3 +1,4 @@
+use chrono::{DateTime, UTC};
 use tl::{Type, Vector, BareVector};
 use tl::dynamic::{TLObject, LengthAndObject};
 
@@ -181,6 +182,21 @@ pub struct GetFutureSalts {
     pub num: i32,
 }
 
+#[derive(Debug, Clone, TLType)]
+pub struct FutureSalt {
+    pub valid_since: DateTime<UTC>,
+    pub valid_until: DateTime<UTC>,
+    pub salt: u64,
+}
+
+#[derive(Debug, TLType)]
+#[tl_id(_ae500895)]
+pub struct FutureSalts {
+    pub req_msg_id: u64,
+    pub now: DateTime<UTC>,
+    pub salts: BareVector<FutureSalt>,
+}
+
 #[derive(Debug, TLType)]
 #[tl_id(_f35c6d01)]
 pub struct RpcResult {
@@ -223,3 +239,7 @@ pub struct Message {
 #[derive(Debug, TLType)]
 #[tl_id(_73f1f8dc)]
 pub struct MessageContainer(pub BareVector<Message>);
+
+#[derive(Debug, TLType)]
+#[tl_id(_3072cfa1)]
+pub struct GzipPacked(pub Vec<u8>);
