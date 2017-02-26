@@ -1,7 +1,7 @@
 use super::{contacts, Dialog, Message, Chat, User, EncryptedFile, Document};
 use tl::Vector;
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum Dialogs {
     #[tl_id(_15ba6c40)] Dialogs {
         dialogs: Vector<Dialog>,
@@ -18,7 +18,7 @@ pub enum Dialogs {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum Messages {
     #[tl_id(_8c718e87)] Messages {
         messages: Vector<Message>,
@@ -33,7 +33,7 @@ pub enum Messages {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum StatedMessages {
     #[tl_id(_969478bb)] Messages {
         messages: Vector<Message>,
@@ -52,7 +52,7 @@ pub enum StatedMessages {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum StatedMessage {
     #[tl_id(_d07ae726)] Message {
         message: Message,
@@ -71,7 +71,7 @@ pub enum StatedMessage {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum SentMessage {
     #[tl_id(_d1f4d35c)] Message {
         id: i32,
@@ -88,14 +88,14 @@ pub enum SentMessage {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_8150cbd8)]
 pub struct Chats {
     pub chats: Vector<Chat>,
     pub users: Vector<User>,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_e5d7d19c)]
 pub struct ChatFull {
     pub full_chat: super::ChatFull,
@@ -103,7 +103,7 @@ pub struct ChatFull {
     pub users: Vector<User>,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_b7de36f2)]
 pub struct AffectedHistory {
     pub pts: i32,
@@ -111,7 +111,7 @@ pub struct AffectedHistory {
     pub offset: i32,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum DhConfig {
     #[tl_id(_c0e24635)] NotModified {
         random: Vec<u8>,
@@ -124,7 +124,7 @@ pub enum DhConfig {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum SentEncryptedMessage {
     #[tl_id(_560f8935)] Message {
         date: i32,
@@ -135,7 +135,7 @@ pub enum SentEncryptedMessage {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum Stickers {
     #[tl_id(_f1749a22)] NotModified,
     #[tl_id(_8a8ecd32)] Stickers {
@@ -144,14 +144,14 @@ pub enum Stickers {
     },
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_12b299d4)]
 pub struct StickerPack {
     pub emoticon: String,
     pub documents: Vector<i64>,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum AllStickers {
     #[tl_id(_e86602c3)] NotModified,
     #[tl_id(_dcef3102)] All {

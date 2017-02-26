@@ -2,14 +2,14 @@ use chrono::{DateTime, UTC};
 use tl::{Type, Vector, BareVector};
 use tl::dynamic::{TLObject, LengthAndObject};
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_cb9f372d)]
 pub struct InvokeAfterMsg<T: Type> {
     pub msg_id: i64,
     pub query: T,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_3dc4b4f0)]
 pub struct InvokeAfterMsgs<T: Type> {
     pub msg_ids: Vector<i64>,
@@ -23,7 +23,7 @@ pub struct InvokeWithLayer<T: Type> {
     pub query: T,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_69796de9)]
 pub struct InitConnection<T: Type> {
     pub api_id: i32,
@@ -38,7 +38,7 @@ pub mod authz {
     use tl::Vector;
     pub type Nonce = (u64, u64);
 
-    #[derive(TLType)]
+    #[derive(Debug, TLType)]
     #[tl_id(_60469778)]
     pub struct ReqPQ {
         pub nonce: Nonce,
@@ -138,13 +138,13 @@ pub mod authz {
 }
 
 pub mod auth {
-    #[derive(TLType)]
+    #[derive(Debug, TLType)]
     #[tl_id(_6fe51dfb)]
     pub struct CheckPhone {
         pub phone_number: String,
     }
 
-    #[derive(TLType)]
+    #[derive(Debug, TLType)]
     #[tl_id(_e300cc3b)]
     pub struct CheckedPhone {
         pub phone_registered: bool,
@@ -171,13 +171,13 @@ pub mod auth {
 }
 
 pub mod help {
-    #[derive(TLType)]
+    #[derive(Debug, TLType)]
     #[tl_id(_c4f9186b)]
     pub struct GetConfig;
 }
 
 pub mod updates {
-    #[derive(TLType)]
+    #[derive(Debug, TLType)]
     #[tl_id(_edd4882a)]
     pub struct GetState;
 }

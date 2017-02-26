@@ -1,7 +1,7 @@
 use super::*;
 use tl::Vector;
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 #[tl_id(_a56c2a3e)]
 pub struct State {
     pub pts: i32,
@@ -11,7 +11,7 @@ pub struct State {
     pub unread_count: i32,
 }
 
-#[derive(TLType)]
+#[derive(Debug, TLType)]
 pub enum Difference {
     #[tl_id(_5d75a138)] Empty {
         date: i32,
