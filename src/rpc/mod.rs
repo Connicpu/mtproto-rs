@@ -64,18 +64,23 @@ impl Session {
         self.server_salts.first().unwrap().salt
     }
 
-    pub fn add_server_salts(&mut self, salts: &[FutureSalt]) {
-        self.server_salts.extend(salts.into_iter().cloned());
+    pub fn add_server_salts<I>(&mut self, salts: I)
+        where I: IntoIterator<Item = FutureSalt>,
+    {
+        self.server_salts.extend(salts);
         self.server_salts.sort_by(|a, b| a.valid_since.cmp(&b.valid_since));
     }
 
-    pub fn begin_encryption(&mut self, server_salt: u64, authorization_key: encryption::AuthKey) {
+    pub fn adopt_negotiated_salt(&mut self, server_salt: u64) {
         let time = UTC::now();
         self.server_salts.push(FutureSalt {
             valid_until: time.clone() + Duration::minutes(10),
             valid_since: time,
             salt: server_salt,
         });
+    }
+
+    pub fn adopt_key(&mut self, authorization_key: encryption::AuthKey) {
         self.auth_key = Some(authorization_key);
     }
 
@@ -87,7 +92,7 @@ impl Session {
     }
 
     pub fn encrypted_payload(&mut self, payload: &[u8]) -> Result<OutboundMessage> {
-        let key = self.auth_key.unwrap();
+        let key = self.auth_key.clone().unwrap();
         let mut ret = OutboundMessage {
             message_id: self.next_message_id(),
             message: vec![],
@@ -156,7 +161,7 @@ impl Session {
     }
 
     fn decrypt_message(&self, message: &[u8]) -> Result<InboundMessage> {
-        let decrypted = self.auth_key.unwrap().decrypt_message(message)?;
+        let decrypted = self.auth_key.clone().unwrap().decrypt_message(message)?;
         let mut cursor = io::Cursor::new(&decrypted[..]);
         let server_salt = cursor.read_u64::<LittleEndian>().unwrap();
         let session_id = cursor.read_u64::<LittleEndian>().unwrap();

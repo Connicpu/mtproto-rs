@@ -107,8 +107,6 @@ impl Clone for AuthKey {
     }
 }
 
-impl Copy for AuthKey {}
-
 impl fmt::Debug for AuthKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "AuthKey(#{:08x})", self.fingerprint)
@@ -181,5 +179,9 @@ impl AuthKey {
         let message_key = &message[8..24];
         let aes = self.generate_message_aes_params(message_key, symm::Mode::Decrypt)?;
         aes.ige_decrypt(&message[24..])
+    }
+
+    pub fn into_inner(self) -> [u8; 256] {
+        self.auth_key
     }
 }
