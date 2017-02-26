@@ -176,6 +176,12 @@ pub mod help {
     pub struct GetConfig;
 }
 
+pub mod updates {
+    #[derive(TLType)]
+    #[tl_id(_edd4882a)]
+    pub struct GetState;
+}
+
 #[derive(Debug, TLType)]
 #[tl_id(_b921bd04)]
 pub struct GetFutureSalts {
