@@ -6,7 +6,7 @@ license = "MIT/Apache-2.0"
 
 [dependencies]
 byteorder = "1"
-chrono = "0.2"
+chrono = "0.3"
 crc = "1.2"
 error-chain = "0.9"
 openssl = "0.9.7"
