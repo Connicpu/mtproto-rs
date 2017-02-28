@@ -170,10 +170,57 @@ pub mod auth {
     }
 }
 
+pub mod account {
+    use tl::complex_types::{InputNotifyPeer, InputPeerNotifySettings};
+
+    #[derive(Debug, TLType)]
+    #[tl_id(_84be5b93)]
+    pub struct UpdateNotifySettings {
+        pub peer: InputNotifyPeer,
+        pub settings: InputPeerNotifySettings,
+    }
+}
+
+pub mod contacts {
+    #[derive(Debug, TLType)]
+    #[tl_id(_22c6aa08)]
+    pub struct GetContacts {
+        pub hash: String,
+    }
+
+    #[derive(Debug, TLType)]
+    #[tl_id(_c4a353ee)]
+    pub struct GetStatuses;
+}
+
 pub mod help {
     #[derive(Debug, TLType)]
     #[tl_id(_c4f9186b)]
     pub struct GetConfig;
+}
+
+pub mod messages {
+    use tl::Vector;
+
+    #[derive(Debug, TLType)]
+    #[tl_id(_3c6aa187)]
+    pub struct GetChats {
+        pub id: Vector<i32>,
+    }
+
+    #[derive(Debug, TLType)]
+    #[tl_id(_3b831c66)]
+    pub struct GetFullChat {
+        pub chat_id: i32,
+    }
+
+    #[derive(Debug, TLType)]
+    #[tl_id(_eccf1df6)]
+    pub struct GetDialogs {
+        pub offset: i32,
+        pub max_id: i32,
+        pub limit: i32,
+    }
 }
 
 pub mod updates {

@@ -33,6 +33,12 @@ impl<T: Type> Vector<T> {
     }
 }
 
+impl Vector<Box<tl::dynamic::TLObject>> {
+    pub fn register_dynamic<R: Reader>(cstore: &mut tl::dynamic::TLCtorMap<R>) {
+        cstore.0.insert(TYPE_ID, tl::dynamic::TLCtor(<Self as tl::dynamic::TLDynamic>::deserialize));
+    }
+}
+
 impl<T: Type> Type for Vector<T> {
     fn bare_type() -> bool {
         false
@@ -61,6 +67,12 @@ impl<T: Type> Type for Vector<T> {
         }
 
         Vector::deserialize(reader)
+    }
+}
+
+impl<T: Type> From<Vec<T>> for Vector<T> {
+    fn from(v: Vec<T>) -> Self {
+        Vector::from_elements(v)
     }
 }
 

@@ -18,6 +18,15 @@ pub enum Dialogs {
     },
 }
 
+impl Dialogs {
+    pub fn chats(&self) -> &[Chat] {
+        match self {
+            &Dialogs::Dialogs { ref chats, .. } => &chats.elements,
+            &Dialogs::Slice { ref chats, .. } => &chats.elements,
+        }
+    }
+}
+
 #[derive(Debug, TLType)]
 pub enum Messages {
     #[tl_id(_8c718e87)] Messages {

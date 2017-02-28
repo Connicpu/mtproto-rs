@@ -19,8 +19,7 @@ pub mod error {
 
         errors {
             InvalidData {}
-            InvalidType {}
-            UnknownType {}
+            InvalidType(tl_id: ::tl::parsing::ConstructorId) {}
             PrimitiveAsPolymorphic {}
             BoxedAsBare {}
             ReceivedSendType {}

@@ -166,7 +166,7 @@ pub struct InputAppEvent {
 #[derive(Debug, TLType)]
 pub enum Peer {
     #[tl_id(_9db1bc6d)] User { user_id: i32 },
-    #[tl_id(_bad0e5bb)] Char { chat_id: i32 },
+    #[tl_id(_bad0e5bb)] Chat { chat_id: i32 },
 }
 
 #[derive(Debug, TLType)]
@@ -236,6 +236,62 @@ pub enum User {
     }
 }
 
+impl User {
+    pub fn id(&self) -> i32 {
+        match self {
+            &User::Empty { id, .. } => id,
+            &User::SelfUser { id, .. } => id,
+            &User::Contact { id, .. } => id,
+            &User::Request { id, .. } => id,
+            &User::Foreign { id, .. } => id,
+            &User::Deleted { id, .. } => id,
+        }
+    }
+
+    pub fn names(&self) -> Option<(&str, &str, &str)> {
+        match self {
+            &User::Empty { .. } => None,
+            &User::SelfUser { ref first_name, ref last_name, ref username, .. } => {
+                Some((first_name, last_name, username))
+            },
+            &User::Contact { ref first_name, ref last_name, ref username, .. } => {
+                Some((first_name, last_name, username))
+            },
+            &User::Request { ref first_name, ref last_name, ref username, .. } => {
+                Some((first_name, last_name, username))
+            },
+            &User::Foreign { ref first_name, ref last_name, ref username, .. } => {
+                Some((first_name, last_name, username))
+            },
+            &User::Deleted { ref first_name, ref last_name, ref username, .. } => {
+                Some((first_name, last_name, username))
+            },
+        }
+    }
+
+    pub fn status(&self) -> Option<&UserStatus> {
+        match self {
+            &User::Empty { .. } => None,
+            &User::SelfUser { ref status, .. } => Some(status),
+            &User::Contact { ref status, .. } => Some(status),
+            &User::Request { ref status, .. } => Some(status),
+            &User::Foreign { ref status, .. } => Some(status),
+            &User::Deleted { .. } => None,
+        }
+    }
+
+    pub fn status_mut(&mut self) -> Option<&mut UserStatus> {
+        match self {
+            &mut User::Empty { .. } => None,
+            &mut User::SelfUser { ref mut status, .. } => Some(status),
+            &mut User::Contact { ref mut status, .. } => Some(status),
+            &mut User::Request { ref mut status, .. } => Some(status),
+            &mut User::Foreign { ref mut status, .. } => Some(status),
+            &mut User::Deleted { .. } => None,
+        }
+    }
+}
+
 #[derive(Debug, TLType)]
 pub enum UserProfilePhoto {
     #[tl_id(_4f11bae1)] Empty,
@@ -275,6 +331,16 @@ pub enum Chat {
         title: String,
         date: i32,
     },
+}
+
+impl Chat {
+    pub fn id(&self) -> i32 {
+        match self {
+            &Chat::Empty { id, ..} => id,
+            &Chat::Chat { id, ..} => id,
+            &Chat::Forbidden { id, ..} => id,
+        }
+    }
 }
 
 #[derive(Debug, TLType)]
@@ -467,7 +533,7 @@ pub enum GeoPoint {
 
 #[derive(Debug, TLType)]
 pub enum InputNotifyPeer {
-    #[tl_id(_b8bc5b0c)] Peer(Peer),
+    #[tl_id(_b8bc5b0c)] Peer(InputPeer),
     #[tl_id(_193b4417)] Users,
     #[tl_id(_4a95e84e)] Chats,
     #[tl_id(_a429b886)] All,

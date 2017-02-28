@@ -224,7 +224,7 @@ fn impl_item_struct(tl_id_opt: Option<u32>, ty: &syn::Ident, generics: &syn::Gen
             if _id == #type_id {
                 Self::deserialize(_reader)
             } else {
-                Err(::error::ErrorKind::InvalidType.into())
+                Err(::error::ErrorKind::InvalidType(_id).into())
             }
         };
         Impls {
@@ -324,7 +324,7 @@ fn impl_item_enum(ty: &syn::Ident, variants: &[syn::Variant]) -> Impls {
         quote! {
             match _id.0 {
                 #( #tl_ids => Ok(#variant_names #deserialize_fields), )*
-                _ => Err(::error::ErrorKind::InvalidType.into()),
+                id => Err(::error::ErrorKind::InvalidType(::tl::parsing::ConstructorId(id)).into()),
             }
         }
     };
@@ -352,6 +352,7 @@ pub fn expand_tldynamic(input: TokenStream) -> TokenStream {
     let ret = quote! {
         impl #ident {
             pub fn register_ctors<R: ::tl::parsing::Reader>(cstore: &mut ::tl::dynamic::TLCtorMap<R>) {
+                ::tl::Vector::<Box<::tl::dynamic::TLObject>>::register_dynamic(cstore);
                 #ident::__register_1(cstore)
             }
 
