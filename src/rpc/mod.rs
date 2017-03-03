@@ -202,3 +202,7 @@ fn sha1_nonces(nonces: &[Nonce]) -> Result<Vec<u8>> {
     }
     Ok(hasher.finish()?)
 }
+
+pub trait RpcFunction {
+    type Reply;
+}

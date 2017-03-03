@@ -45,6 +45,14 @@ pub mod parser {
         pub fn name(&self) -> Option<&str> {
             self.names_vec().and_then(|v| v.last().map(String::as_str))
         }
+
+        pub fn is_type_parameter(&self) -> bool {
+            use self::Type::*;
+            match self {
+                &TypeParameter(..) => true,
+                _ => false,
+            }
+        }
     }
 
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -440,6 +448,25 @@ impl Field {
 }
 
 impl Constructor {
+    fn fixup_output(&mut self) {
+        if self.is_output_a_type_parameter() {
+            self.output = Type::TypeParameter(self.output.name().unwrap().into());
+        }
+    }
+
+    fn is_output_a_type_parameter(&self) -> bool {
+        let output_name = match &self.output {
+            &Type::Named(ref v) if v.len() == 1 => v[0].as_str(),
+            _ => return false,
+        };
+        for p in &self.type_parameters {
+            if p.name.as_ref().map(String::as_str) == Some(output_name) {
+                return true;
+            }
+        }
+        false
+    }
+
     fn fields_tokens(&self, pub_: quote::Tokens, trailer: quote::Tokens) -> quote::Tokens {
         let pub_ = std::iter::repeat(pub_);
         if self.fields.is_empty() {
@@ -462,7 +489,17 @@ impl Constructor {
         quote! { <#(#tys),*> }
     }
 
-    fn into_struct_base(&self, name: syn::Ident) -> quote::Tokens {
+    fn rpc_generics(&self) -> quote::Tokens {
+        if self.type_parameters.is_empty() {
+            return quote!();
+        }
+        let tys = self.type_parameters.iter()
+            .map(|f| no_conflict_ident(f.name.as_ref().unwrap()));
+        let traits = std::iter::repeat(quote!(::rpc::RpcFunction));
+        quote! { <#(#tys: #traits),*> }
+    }
+
+    fn into_struct_base(&self, name: &syn::Ident) -> quote::Tokens {
         let generics = self.generics();
         let fields = self.fields_tokens(quote! {pub}, quote! {;});
         quote! {
@@ -473,7 +510,7 @@ impl Constructor {
 
     fn into_struct(&self) -> quote::Tokens {
         let name = self.output.name().map(|n| no_conflict_ident(n)).unwrap();
-        self.into_struct_base(name)
+        self.into_struct_base(&name)
     }
 
     fn variant_name(&self) -> syn::Ident {
@@ -481,7 +518,20 @@ impl Constructor {
     }
 
     fn into_function_struct(&self) -> quote::Tokens {
-        self.into_struct_base(self.variant_name())
+        let name = self.variant_name();
+        let rpc_generics = self.rpc_generics();
+        let generics = self.generics();
+        let struct_block = self.into_struct_base(&name);
+        let mut output_ty = self.output.into_type().unboxed();
+        if self.output.is_type_parameter() {
+            output_ty = quote! {#output_ty::Reply};
+        }
+        quote! {
+            #struct_block
+            impl #rpc_generics ::rpc::RpcFunction for #name #generics {
+                type Reply = #output_ty;
+            }
+        }
     }
 
     fn into_variant(&self) -> quote::Tokens {
@@ -569,7 +619,6 @@ impl Constructors {
             return self.0[0].into_struct();
         }
 
-
         let name = self.0[0].output.name().map(|n| no_conflict_ident(n)).unwrap();
         let methods = self.determine_methods(&name);
         let variants = self.0.iter()
@@ -620,7 +669,10 @@ pub fn generate_code_for(input: &str) -> String {
     for (ns, mut substructs) in constructors.functions {
         substructs.sort_by_key(|c| c.variant.clone());
         let substructs = substructs.into_iter()
-            .map(|c| c.into_function_struct());
+            .map(|mut c| {
+                c.fixup_output();
+                c.into_function_struct()
+            });
         match ns {
             None => rpc_items.extend(substructs),
             Some(name) => {
