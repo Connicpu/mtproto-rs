@@ -209,6 +209,22 @@ struct AllConstructors {
     functions: BTreeMap<Option<String>, Vec<Constructor>>,
 }
 
+fn filter_items(iv: &mut Vec<Item>) {
+    iv.retain(|i| {
+        let c = match i {
+            &Item::Constructor(ref c) => c,
+            _ => return true,
+        };
+        // Blacklist some annoying inconsistencies.
+        match c.variant.name() {
+            Some("future_salt") |
+            Some("future_salts") |
+            Some("vector") => false,
+            _ => true,
+        }
+    })
+}
+
 fn partition_by_delimiter_and_namespace(iv: Vec<Item>) -> AllConstructors {
     let mut current = Delimiter::Types;
     let mut ret = AllConstructors {
@@ -269,21 +285,99 @@ fn all_types_prefix() -> quote::Tokens {
     quote! {::schema::}
 }
 
-fn names_to_type(names: &Vec<String>, prefix: quote::Tokens) -> (bool, quote::Tokens) {
+#[derive(Debug, Clone)]
+struct TypeIR {
+    tokens: quote::Tokens,
+    is_copy: bool,
+    needs_box: bool,
+    with_option: bool,
+}
+
+impl TypeIR {
+    fn copyable(tokens: quote::Tokens) -> Self {
+        TypeIR {
+            tokens: tokens,
+            is_copy: true,
+            needs_box: false,
+            with_option: false,
+        }
+    }
+
+    fn noncopyable(tokens: quote::Tokens) -> Self {
+        TypeIR {
+            tokens: tokens,
+            is_copy: false,
+            needs_box: false,
+            with_option: false,
+        }
+    }
+
+    fn needs_box(tokens: quote::Tokens) -> Self {
+        TypeIR {
+            tokens: tokens,
+            is_copy: false,
+            needs_box: true,
+            with_option: false,
+        }
+    }
+
+    fn _unboxed(self) -> quote::Tokens {
+        self.tokens
+    }
+
+    fn _boxed(self) -> quote::Tokens {
+        if self.needs_box {
+            let tokens = self.tokens;
+            quote! { Box<#tokens> }
+        } else {
+            self.tokens
+        }
+    }
+
+    fn _ref_type(self) -> quote::Tokens {
+        let needs_ref = self.needs_box || !self.is_copy;
+        let ty = self._boxed();
+        if needs_ref {
+            quote! { &#ty }
+        } else {
+            ty
+        }
+    }
+
+    fn unboxed(self) -> quote::Tokens {
+        wrap_option_type(self.with_option, self._unboxed())
+    }
+
+    fn boxed(self) -> quote::Tokens {
+        wrap_option_type(self.with_option, self._boxed())
+    }
+
+    fn ref_type(self) -> quote::Tokens {
+        wrap_option_type(self.with_option, self._ref_type())
+    }
+
+    fn option_wrapped(self) -> Self {
+        TypeIR {
+            with_option: true,
+            ..self
+        }
+    }
+}
+
+fn names_to_type(names: &Vec<String>) -> TypeIR {
     let type_prefix = all_types_prefix();
     if names.len() == 1 {
         match names[0].as_str() {
-            "Bool" => return (true, quote! { bool }),
-            "true" => return (true, quote! { () }),
-            "int" => return (true, quote! { i32 }),
-            "long" => return (true, quote! { i64 }),
-            "int128" => return (true, quote! { #type_prefix i128 }),
-            "int256" => return (true, quote! { #type_prefix i256 }),
-            "double" => return (true, quote! { f64 }),
-            "bytes" => return (false, quote! { #prefix Vec<u8> }),
-            "string" => return (false, quote! { #prefix String }),
-            "vector" => return (false, quote! { #prefix BareVector }),
-            "Vector" => return (false, quote! { #prefix Vec }),
+            "Bool" => return TypeIR::copyable(quote! { bool }),
+            "true" => return TypeIR::copyable(quote! { () }),
+            "int" => return TypeIR::copyable(quote! { i32 }),
+            "long" => return TypeIR::copyable(quote! { i64 }),
+            "int128" => return TypeIR::copyable(quote! { #type_prefix i128 }),
+            "int256" => return TypeIR::copyable(quote! { #type_prefix i256 }),
+            "double" => return TypeIR::copyable(quote! { f64 }),
+            "bytes" => return TypeIR::noncopyable(quote! { Vec<u8> }),
+            "string" => return TypeIR::noncopyable(quote! { String }),
+            "Vector" => return TypeIR::noncopyable(quote! { Vec }),
             _ => (),
         }
     }
@@ -295,38 +389,34 @@ fn names_to_type(names: &Vec<String>, prefix: quote::Tokens) -> (bool, quote::To
         let name = no_conflict_ident(names[1].as_str());
         ty = quote! {#ty::#name};
     }
-    (false, ty)
+    // Special case two recursive types.
+    match names.last().map(String::as_str) {
+        Some("PageBlock") |
+        Some("RichText") => TypeIR::needs_box(ty),
+        _ => TypeIR::noncopyable(ty),
+    }
 }
 
 impl Type {
-    fn into_type_base(&self, prefix: quote::Tokens) -> (bool, quote::Tokens) {
+    fn into_type(&self) -> TypeIR {
         use Type::*;
         match self {
-            &Int => (true, quote! { i32 }),
-            &Named(ref v) => names_to_type(v, prefix),
+            &Int => TypeIR::copyable(quote! { i32 }),
+            &Named(ref v) => names_to_type(v),
             &TypeParameter(ref s) => {
                 let id = no_conflict_ident(s);
-                (false, quote! { #prefix #id })
+                TypeIR::noncopyable(quote! { #id })
             },
             &Generic(ref container, ref ty) => {
-                let (_, container) = names_to_type(container, prefix);
-                let (_, ty) = ty.into_type();
-                (false, quote! { #container<#ty> })
+                let container = names_to_type(container).unboxed();
+                let ty = ty.into_type().unboxed();
+                TypeIR::noncopyable(quote! { #container<#ty> })
             },
             &Flagged(_, _, ref ty) => {
-                let (is_copy, ty) = ty.into_type_base(prefix);
-                (is_copy, quote! { Option<#ty> })
+                ty.into_type().option_wrapped()
             },
             &Repeated(..) => unimplemented!(),
         }
-    }
-
-    fn into_type(&self) -> (bool, quote::Tokens) {
-        self.into_type_base(quote! {})
-    }
-
-    fn into_ref_type(&self) -> (bool, quote::Tokens) {
-        self.into_type_base(quote! {&})
     }
 
     fn is_optional(&self) -> bool {
@@ -341,7 +431,7 @@ impl Type {
 impl Field {
     fn into_field(&self) -> quote::Tokens {
         let name = self.name.as_ref().map(|n| no_conflict_ident(n)).unwrap();
-        let (_, ty) = self.ty.into_type();
+        let ty = self.ty.into_type().boxed();
 
         quote! {
             #name: #ty
@@ -432,12 +522,12 @@ impl Constructors {
                 continue;
             }
             let name = no_conflict_ident(name);
-            let (is_copy, ty) = output_ty.into_ref_type();
-            let ty = wrap_option_type(
-                !output_ty.is_optional() && constructors.len() != all_constructors, ty);
-            let is_option_type = output_ty.is_optional() || constructors.len() != all_constructors;
-            let value = wrap_option_value(is_option_type, quote!(#name));
-            let ref_ = if is_copy {quote!()} else {quote!(ref)};
+            let mut ty_ir = output_ty.into_type();
+            if constructors.len() != all_constructors {
+                ty_ir.with_option = true;
+            }
+            let value = wrap_option_value(ty_ir.with_option, quote!(#name));
+            let ref_ = if ty_ir.is_copy {quote!()} else {quote!(ref)};
             let field = if output_ty.is_optional() {
                 quote! { #name: Some(#ref_ #name) }
             } else {
@@ -448,11 +538,12 @@ impl Constructors {
                     let cons_name = c.variant_name();
                     quote! { & #enum_name :: #cons_name { #field, .. } => #value, }
                 });
-            let trailer = if !is_option_type {
+            let trailer = if !ty_ir.with_option {
                 quote! {}
             } else {
                 quote! { _ => None, }
             };
+            let ty = ty_ir.ref_type();
             methods.push(quote! {
                 pub fn #name(&self) -> #ty {
                     match self {
@@ -497,10 +588,14 @@ impl Constructors {
 }
 
 pub fn generate_code_for(input: &str) -> String {
-    let constructors = partition_by_delimiter_and_namespace(
-        parser::parse_string(input).unwrap());
+    let constructors = {
+        let mut items = parser::parse_string(input).unwrap();
+        filter_items(&mut items);
+        partition_by_delimiter_and_namespace(items)
+    };
 
     let mut items = vec![quote! {
+        #![allow(non_camel_case_types)]
         pub type i128 = (i64, i64);
         pub type i256 = (i128, i128);
     }];
