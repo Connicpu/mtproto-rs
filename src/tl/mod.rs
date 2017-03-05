@@ -353,6 +353,53 @@ impl Type for () {
     }
 }
 
+impl<T: Type> Type for Option<T> {
+    fn bare_type() -> bool {
+        T::bare_type()
+    }
+
+    fn type_id(&self) -> Option<ConstructorId> {
+        self.as_ref().and_then(T::type_id)
+    }
+
+    fn serialize<W: Writer>(&self, writer: &mut W) -> Result<()> {
+        match self {
+            &Some(ref inner) => T::serialize(inner, writer),
+            &None => Ok(()),
+        }
+    }
+
+    fn deserialize<R: Reader>(reader: &mut R) -> Result<Self> {
+        T::deserialize(reader).map(Some)
+    }
+
+    fn deserialize_boxed<R: Reader>(id: ConstructorId, reader: &mut R) -> Result<Self> {
+        T::deserialize_boxed(id, reader).map(Some)
+    }
+}
+
+impl<T: Type> Type for Box<T> {
+    fn bare_type() -> bool {
+        T::bare_type()
+    }
+
+    fn type_id(&self) -> Option<ConstructorId> {
+        T::type_id(&*self)
+    }
+
+    fn serialize<W: Writer>(&self, writer: &mut W) -> Result<()> {
+        T::serialize(&*self, writer)
+    }
+
+    fn deserialize<R: Reader>(reader: &mut R) -> Result<Self> {
+        T::deserialize(reader).map(Box::new)
+    }
+
+    fn deserialize_boxed<R: Reader>(id: ConstructorId, reader: &mut R) -> Result<Self> {
+        T::deserialize_boxed(id, reader).map(Box::new)
+    }
+}
+
 impl Type for DateTime<UTC> {
     fn bare_type() -> bool {
         true
