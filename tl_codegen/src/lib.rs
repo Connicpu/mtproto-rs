@@ -48,6 +48,14 @@ pub mod parser {
             self.names_vec().and_then(|v| v.last().map(String::as_str))
         }
 
+        pub fn flag_field(&self) -> Option<(&str, u32)> {
+            use self::Type::*;
+            match self {
+                &Flagged(ref f, b, _) => Some((f, b)),
+                _ => None,
+            }
+        }
+
         pub fn is_type_parameter(&self) -> bool {
             use self::Type::*;
             match self {
@@ -208,7 +216,7 @@ pub mod parser {
 
 pub use parser::{Constructor, Delimiter, Field, Item, Type};
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 #[derive(Debug, Default)]
 struct Constructors(Vec<Constructor>);
@@ -473,6 +481,16 @@ impl Constructor {
         false
     }
 
+    fn flag_field_names(&self) -> HashSet<syn::Ident> {
+        let mut ret = HashSet::new();
+        for f in &self.fields {
+            if let Some((flag, _)) = f.ty.flag_field() {
+                ret.insert(no_conflict_ident(flag));
+            }
+        }
+        ret
+    }
+
     fn fields_tokens(&self, pub_: quote::Tokens, trailer: quote::Tokens) -> quote::Tokens {
         let pub_ = std::iter::repeat(pub_);
         if self.fields.is_empty() {
@@ -524,25 +542,114 @@ impl Constructor {
         quote! { <#(#tys: #traits),*> }
     }
 
+    fn as_struct_update_flags_method(&self) -> Option<quote::Tokens> {
+        let flag_fields = self.flag_field_names();
+        if flag_fields.is_empty() {
+            return None;
+        }
+        let fields = self.fields.iter()
+            .filter_map(|f| {
+                let name = no_conflict_ident(f.name.as_ref().unwrap());
+                f.ty.flag_field().map(|(flag_field, bit)| {
+                    let flag_field = no_conflict_ident(flag_field);
+                    quote! {
+                        if self.#name.is_some() {
+                            self.#flag_field |= 1 << #bit;
+                        }
+                    }
+                })
+            });
+
+        Some(quote! {
+            pub fn update_flags(&mut self) {
+                #( #fields )*
+            }
+
+            pub fn clear_and_update_flags(&mut self) {
+                #( self.#flag_fields = 0; )*
+                self.update_flags();
+            }
+        })
+    }
+
     fn as_struct_base(&self, name: &syn::Ident) -> quote::Tokens {
         let generics = self.generics();
+        let impl_block = self.as_struct_update_flags_method()
+            .map(|b| quote! {
+                impl #generics #name #generics {
+                    #b
+                }
+            })
+            .unwrap_or_else(|| quote!());
         let fields = self.fields_tokens(quote! {pub}, quote! {;});
         quote! {
             #[derive(Debug, Clone)]
-            pub struct #name #generics #fields
+            pub struct #name #generics #fields #impl_block
         }
     }
 
-    fn as_struct_deserialize(&self) -> quote::Tokens {
+    fn as_struct_deserialize(&self) -> (quote::Tokens, quote::Tokens) {
         if self.fields.is_empty() {
-            return quote!();
+            return (quote!(), quote!());
         }
-        let fields = self.fields.iter()
-            .map(|f| {
+        let flag_fields = self.flag_field_names();
+        let constructor = {
+            let fields = self.fields.iter()
+                .map(|f| {
+                    let name = no_conflict_ident(f.name.as_ref().unwrap());
+                    if flag_fields.contains(&name) {
+                        quote! { #name: { #name = _reader.read_generic()?; #name } }
+                    } else if let Some((flag_field, bit)) = f.ty.flag_field() {
+                        let flag_field = no_conflict_ident(flag_field);
+                        quote! {
+                            #name: if #flag_field & (1 << #bit) == 0 {
+                                None
+                            } else {
+                                Some(_reader.read_generic()?)
+                            }
+                        }
+                    } else {
+                        quote! { #name: _reader.read_generic()? }
+                    }
+                });
+            quote!({ #( #fields, )* })
+        };
+        let flag_lets = quote! {
+            #( let #flag_fields; )*
+        };
+        (flag_lets, constructor)
+    }
+
+    fn as_variant_update_flags(&self, name: &syn::Ident) -> Option<(quote::Tokens, quote::Tokens)> {
+        let flag_fields_ = self.flag_field_names();
+        if flag_fields_.is_empty() {
+            return None;
+        }
+        let (field_names, field_tests): (Vec<_>, Vec<_>) = self.fields.iter()
+            .filter_map(|f| {
                 let name = no_conflict_ident(f.name.as_ref().unwrap());
-                quote! { #name: _reader.read_generic()? }
-            });
-        quote!({ #( #fields, )* })
+                f.ty.flag_field().map(|(flag_field, bit)| {
+                    let flag_field = no_conflict_ident(flag_field);
+                    (quote!(#name), quote! {
+                        if #name.is_some() {
+                            *#flag_field |= 1 << #bit;
+                        }
+                    })
+                })
+            })
+            .unzip();
+
+        let flag_fields = &flag_fields_;
+
+        Some((quote! {
+            #name { #( ref mut #flag_fields ),* , #( ref #field_names ),* , .. } => {
+                #( #field_tests )*
+            }
+        }, quote! {
+            #name { #( ref mut #flag_fields ),* , .. } => {
+                #( *#flag_fields = 0; )*
+            }
+        }))
     }
 
     fn as_struct(&self) -> quote::Tokens {
@@ -552,12 +659,12 @@ impl Constructor {
             .map(|d| quote! { let &#d = self; })
             .unwrap_or_else(|| quote!());
         let serialize_stmts = self.as_variant_serialize();
-        let deserialize = self.as_struct_deserialize();
+        let (flag_lets, deserialize) = self.as_struct_deserialize();
         let type_impl = self.as_type_impl(
             &name,
             quote!(Some(#tl_id)),
             quote!(#serialize_destructure #serialize_stmts Ok(())),
-            quote!(Ok(#name #deserialize)),
+            quote!(Ok({ #flag_lets #name #deserialize })),
             quote! {
                 if _id == #tl_id {
                     Self::deserialize(_reader)
@@ -700,6 +807,45 @@ impl Constructors {
         map
     }
 
+    fn as_update_flags_method(&self, enum_name: &syn::Ident) -> Option<quote::Tokens> {
+        let mut any_flags = false;
+        let (flag_sets, flag_clears): (Vec<_>, Vec<_>) = self.0.iter()
+            .map(|c| {
+                let variant_name = c.variant_name();
+                c.as_variant_update_flags(&variant_name)
+                    .map(|(flag_set, flag_clear)| {
+                        any_flags = true;
+                        (quote!(&mut #enum_name :: #flag_set),
+                         quote!(&mut #enum_name :: #flag_clear))
+                    })
+                    .unwrap_or_else(|| {
+                        let pat = c.as_empty_pattern();
+                        let empty = quote! { &mut #enum_name :: #pat => () };
+                        (empty.clone(), empty)
+                    })
+            })
+            .unzip();
+
+        if !any_flags {
+            return None;
+        }
+
+        Some(quote! {
+            pub fn update_flags(&mut self) {
+                match self {
+                    #( #flag_sets, )*
+                }
+            }
+
+            pub fn clear_and_update_flags(&mut self) {
+                match self {
+                    #( #flag_clears, )*
+                }
+                self.update_flags();
+            }
+        })
+    }
+
     fn determine_methods(&self, enum_name: &syn::Ident) -> quote::Tokens {
         let all_constructors = self.0.len();
         let mut methods = vec![];
@@ -743,6 +889,9 @@ impl Constructors {
                 }
             });
         }
+
+        methods.extend(self.as_update_flags_method(enum_name));
+
         if methods.is_empty() {
             quote! {}
         } else {
@@ -827,8 +976,8 @@ impl Constructors {
             .map(|c| {
                 let variant_name = c.variant_name();
                 let tl_id = c.tl_id();
-                let deserialize = c.as_struct_deserialize();
-                quote! { #tl_id => Ok(#enum_name :: #variant_name #deserialize) }
+                let (flag_lets, deserialize) = c.as_struct_deserialize();
+                quote! { #tl_id => { #flag_lets Ok(#enum_name :: #variant_name #deserialize) } }
             });
         quote! {
             match _id {
@@ -876,6 +1025,7 @@ pub fn generate_code_for(input: &str) -> String {
         #![allow(non_camel_case_types)]
         pub type i128 = (i64, i64);
         pub type i256 = (i128, i128);
+        use rpc::functions::FutureSalts;
     }];
 
     for (ns, constructor_map) in constructors.types {
