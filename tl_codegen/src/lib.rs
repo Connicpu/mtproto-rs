@@ -701,7 +701,15 @@ impl Constructor {
         let fields = self.fields.iter()
             .map(|f| {
                 let name = no_conflict_ident(f.name.as_ref().unwrap());
-                quote! { _writer.write_generic(#name)?; }
+                if f.ty.flag_field().is_some() {
+                    quote! {
+                        if let &Some(ref inner) = #name {
+                            _writer.write_generic(inner)?;
+                        }
+                    }
+                } else {
+                    quote! { _writer.write_generic(#name)?; }
+                }
             });
         quote! {
             #( #fields )*
@@ -1012,6 +1020,20 @@ impl Constructors {
             #type_impl
         }
     }
+
+    fn as_dynamic_ctors(&self) -> Vec<(u32, quote::Tokens)> {
+        let ty = self.0[0].output.as_type().unboxed();
+        self.0.iter()
+            .map(|c| {
+                let tl_id = c.tl_id();
+                (c.tl_id, quote! {
+                    cstore.0.insert(
+                        #tl_id,
+                        TLCtor(<#ty as TLDynamic>::deserialize))
+                })
+            })
+            .collect()
+    }
 }
 
 pub fn generate_code_for(input: &str) -> String {
@@ -1028,7 +1050,10 @@ pub fn generate_code_for(input: &str) -> String {
         use rpc::functions::FutureSalts;
     }];
 
+    let mut dynamic_ctors: BTreeMap<u32, quote::Tokens> = BTreeMap::new();
     for (ns, constructor_map) in constructors.types {
+        dynamic_ctors.extend(
+            constructor_map.values().flat_map(Constructors::as_dynamic_ctors));
         let substructs = constructor_map.values()
             .map(Constructors::as_struct);
         match ns {
@@ -1043,6 +1068,15 @@ pub fn generate_code_for(input: &str) -> String {
             },
         }
     }
+
+    let ctors = dynamic_ctors.values();
+    items.push(quote! {
+        pub fn register_ctors<R: ::tl::parsing::Reader>(cstore: &mut ::tl::dynamic::TLCtorMap<R>) {
+            use tl::dynamic::{TLCtor, TLDynamic, TLObject};
+            ::tl::Vector::<Box<TLObject>>::register_dynamic(cstore);
+            #( #ctors; )*
+        }
+    });
 
     let mut rpc_items = vec![];
     for (ns, mut substructs) in constructors.functions {
