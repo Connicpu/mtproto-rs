@@ -1,15 +1,13 @@
 use std::io;
 
-use chrono::{Duration, UTC, Timelike};
+use chrono::{DateTime, Duration, UTC, Timelike, TimeZone};
 use byteorder::{LittleEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
 use openssl::hash;
 
 pub mod encryption;
-pub mod functions;
 
 use error::Result;
-use self::functions::authz::Nonce;
-use self::functions::FutureSalt;
+use schema::{FutureSalt, Int128};
 
 #[derive(Debug, Clone)]
 pub struct AppId {
@@ -18,23 +16,40 @@ pub struct AppId {
 }
 
 #[derive(Debug, Clone)]
+struct Salt {
+    valid_since: DateTime<UTC>,
+    valid_until: DateTime<UTC>,
+    salt: i64,
+}
+
+impl From<FutureSalt> for Salt {
+    fn from(fs: FutureSalt) -> Self {
+        Salt {
+            valid_since: UTC.timestamp(fs.valid_since as i64, 0),
+            valid_until: UTC.timestamp(fs.valid_until as i64, 0),
+            salt: fs.salt,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Session {
-    session_id: u64,
-    server_salts: Vec<FutureSalt>,
-    seq_no: u32,
+    session_id: i64,
+    server_salts: Vec<Salt>,
+    seq_no: i32,
     auth_key: Option<encryption::AuthKey>,
     pub app_id: AppId,
 }
 
 #[derive(Debug, Clone)]
 pub struct OutboundMessage {
-    pub message_id: u64,
+    pub message_id: i64,
     pub message: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]
 pub struct InboundPayload {
-    pub message_id: u64,
+    pub message_id: i64,
     pub payload: Vec<u8>,
     pub was_encrypted: bool,
 }
@@ -42,7 +57,7 @@ pub struct InboundPayload {
 pub type InboundMessage = ::std::result::Result<InboundPayload, i32>;
 
 impl Session {
-    pub fn new(session_id: u64, app_id: AppId) -> Session {
+    pub fn new(session_id: i64, app_id: AppId) -> Session {
         Session {
             session_id: session_id,
             server_salts: vec![],
@@ -52,13 +67,13 @@ impl Session {
         }
     }
 
-    fn next_content_seq_no(&mut self) -> u32 {
+    fn next_content_seq_no(&mut self) -> i32 {
         let seq = self.seq_no * 2;
         self.seq_no += 1;
         seq
     }
 
-    fn latest_server_salt(&mut self) -> u64 {
+    fn latest_server_salt(&mut self) -> i64 {
         let time = UTC::now();
         self.server_salts.retain(|s| &s.valid_until > &time);
         self.server_salts.first().unwrap().salt
@@ -67,13 +82,13 @@ impl Session {
     pub fn add_server_salts<I>(&mut self, salts: I)
         where I: IntoIterator<Item = FutureSalt>,
     {
-        self.server_salts.extend(salts);
+        self.server_salts.extend(salts.into_iter().map(Into::into));
         self.server_salts.sort_by(|a, b| a.valid_since.cmp(&b.valid_since));
     }
 
-    pub fn adopt_negotiated_salt(&mut self, server_salt: u64) {
+    pub fn adopt_negotiated_salt(&mut self, server_salt: i64) {
         let time = UTC::now();
-        self.server_salts.push(FutureSalt {
+        self.server_salts.push(Salt {
             valid_until: time.clone() + Duration::minutes(10),
             valid_since: time,
             salt: server_salt,
@@ -84,10 +99,10 @@ impl Session {
         self.auth_key = Some(authorization_key);
     }
 
-    fn next_message_id(&mut self) -> u64 {
+    fn next_message_id(&mut self) -> i64 {
         let time = UTC::now();
-        let timestamp = time.timestamp() as u64;
-        let nano = time.nanosecond() as u64;
+        let timestamp = time.timestamp() as i64;
+        let nano = time.nanosecond() as i64;
         (timestamp << 32) | (nano & !3)
     }
 
@@ -100,11 +115,11 @@ impl Session {
         {
             let message = &mut ret.message;
             let salt = self.latest_server_salt();
-            message.write_u64::<LittleEndian>(salt).unwrap();
-            message.write_u64::<LittleEndian>(self.session_id).unwrap();
-            message.write_u64::<LittleEndian>(ret.message_id).unwrap();
-            message.write_u32::<LittleEndian>(self.next_content_seq_no() | 1).unwrap();
-            message.write_u32::<LittleEndian>(payload.len() as u32).unwrap();
+            message.write_i64::<LittleEndian>(salt).unwrap();
+            message.write_i64::<LittleEndian>(self.session_id).unwrap();
+            message.write_i64::<LittleEndian>(ret.message_id).unwrap();
+            message.write_i32::<LittleEndian>(self.next_content_seq_no() | 1).unwrap();
+            message.write_i32::<LittleEndian>(payload.len() as i32).unwrap();
             message.extend(payload);
         }
         ret.message = key.encrypt_message(&ret.message)?;
@@ -118,9 +133,9 @@ impl Session {
         };
         {
             let message = &mut ret.message;
-            message.write_u64::<LittleEndian>(0).unwrap();
-            message.write_u64::<LittleEndian>(ret.message_id).unwrap();
-            message.write_u32::<LittleEndian>(payload.len() as u32).unwrap();
+            message.write_i64::<LittleEndian>(0).unwrap();
+            message.write_i64::<LittleEndian>(ret.message_id).unwrap();
+            message.write_i32::<LittleEndian>(payload.len() as i32).unwrap();
             message.extend(payload);
         }
         ret
@@ -142,14 +157,14 @@ impl Session {
         }
 
         let mut cursor = io::Cursor::new(message);
-        let auth_key_id = cursor.read_u64::<LittleEndian>().unwrap();
+        let auth_key_id = cursor.read_i64::<LittleEndian>().unwrap();
         if auth_key_id != 0 {
             cursor.into_inner();
             return self.decrypt_message(message);
         }
 
-        let message_id = cursor.read_u64::<LittleEndian>().unwrap();
-        let len = cursor.read_u32::<LittleEndian>().unwrap() as usize;
+        let message_id = cursor.read_i64::<LittleEndian>().unwrap();
+        let len = cursor.read_i32::<LittleEndian>().unwrap() as usize;
         let pos = cursor.position() as usize;
         cursor.into_inner();
         let payload = &message[pos..pos+len];
@@ -163,11 +178,11 @@ impl Session {
     fn decrypt_message(&self, message: &[u8]) -> Result<InboundMessage> {
         let decrypted = self.auth_key.clone().unwrap().decrypt_message(message)?;
         let mut cursor = io::Cursor::new(&decrypted[..]);
-        let server_salt = cursor.read_u64::<LittleEndian>().unwrap();
-        let session_id = cursor.read_u64::<LittleEndian>().unwrap();
-        let message_id = cursor.read_u64::<LittleEndian>().unwrap();
-        let seq_no = cursor.read_u32::<LittleEndian>().unwrap();
-        let len = cursor.read_u32::<LittleEndian>().unwrap() as usize;
+        let server_salt = cursor.read_i64::<LittleEndian>().unwrap();
+        let session_id = cursor.read_i64::<LittleEndian>().unwrap();
+        let message_id = cursor.read_i64::<LittleEndian>().unwrap();
+        let seq_no = cursor.read_i32::<LittleEndian>().unwrap();
+        let len = cursor.read_i32::<LittleEndian>().unwrap() as usize;
         let pos = cursor.position() as usize;
         cursor.into_inner();
         let payload = &decrypted[pos..pos+len];
@@ -192,12 +207,12 @@ fn sha1_bytes(parts: &[&[u8]]) -> Result<Vec<u8>> {
     Ok(hasher.finish()?)
 }
 
-fn sha1_nonces(nonces: &[Nonce]) -> Result<Vec<u8>> {
+fn sha1_nonces(nonces: &[Int128]) -> Result<Vec<u8>> {
     let mut hasher = hash::Hasher::new(hash::MessageDigest::sha1())?;
     for nonce in nonces {
         let mut tmp = [0u8; 16];
-        LittleEndian::write_u64(&mut tmp[..8], nonce.0);
-        LittleEndian::write_u64(&mut tmp[8..], nonce.1);
+        LittleEndian::write_i64(&mut tmp[..8], nonce.0);
+        LittleEndian::write_i64(&mut tmp[8..], nonce.1);
         hasher.update(&tmp)?;
     }
     Ok(hasher.finish()?)

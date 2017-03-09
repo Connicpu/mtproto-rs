@@ -29,7 +29,7 @@ impl<'a> RsaPublicKeyRef<'a> {
     }
 }
 
-pub fn find_first_key(of_fingerprints: &[u64]) -> Result<Option<(RsaPublicKey, u64)>> {
+pub fn find_first_key(of_fingerprints: &[i64]) -> Result<Option<(RsaPublicKey, i64)>> {
     let iter = KNOWN_KEYS.iter()
         .map(|k| {
             let key = k.read()?;
@@ -64,8 +64,8 @@ impl RsaPublicKey {
         Ok(hasher.finish()?)
     }
 
-    pub fn fingerprint(&self) -> Result<u64> {
-        Ok(LittleEndian::read_u64(&self.sha1_fingerprint()?[12..20]))
+    pub fn fingerprint(&self) -> Result<i64> {
+        Ok(LittleEndian::read_i64(&self.sha1_fingerprint()?[12..20]))
     }
 
     pub fn encrypt(&self, input: &[u8]) -> Result<Vec<u8>> {

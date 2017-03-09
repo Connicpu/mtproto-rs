@@ -7,6 +7,26 @@ use tl::parsing::{ConstructorId, Reader, Writer};
 pub struct TLCtor<R: Reader>(pub fn(ConstructorId, &mut R) -> Result<Box<TLObject>>);
 pub struct TLCtorMap<R: Reader>(pub HashMap<ConstructorId, TLCtor<R>>);
 
+impl<R: Reader> Clone for TLCtor<R> {
+    fn clone(&self) -> Self {
+        TLCtor(self.0)
+    }
+}
+
+impl<R: Reader> Copy for TLCtor<R> {}
+
+impl<R: Reader> TLCtorMap<R> {
+    pub fn add<T: TLDynamic>(&mut self, id: ConstructorId) {
+        self.0.insert(id, TLCtor(T::deserialize));
+    }
+
+    pub fn get(&self, id: &ConstructorId) -> TLCtor<R> {
+        self.0.get(id)
+            .cloned()
+            .unwrap_or_else(|| TLCtor(UnreadableBag::deserialize))
+    }
+}
+
 impl<R: Reader> Default for TLCtorMap<R> {
     fn default() -> TLCtorMap<R> {
         TLCtorMap(Default::default())
@@ -17,14 +37,6 @@ pub trait TLObject: Any {
     fn tl_id(&self) -> Option<ConstructorId>;
     fn as_any(&self) -> &Any;
     fn as_boxed_any(self: Box<Self>) -> Box<Any>;
-}
-
-pub fn downcast<T: TLObject>(b: Box<TLObject>) -> ::std::result::Result<Box<T>, Box<TLObject>> {
-    if b.as_any().is::<T>() {
-        Ok(b.as_boxed_any().downcast::<T>().unwrap())
-    } else {
-        Err(b)
-    }
 }
 
 impl<T: Type + Any> TLObject for T {
@@ -118,10 +130,54 @@ impl Type for LengthAndObject {
 
 pub trait TLDynamic: TLObject {
     fn deserialize<R: Reader>(id: ConstructorId, reader: &mut R) -> Result<Box<TLObject>>;
+    fn downcast_from(b: Box<TLObject>) -> ::std::result::Result<Self, Box<TLObject>>
+        where Self: Sized;
+}
+
+fn downcast<T: TLObject>(b: Box<TLObject>) -> ::std::result::Result<T, Box<TLObject>> {
+    if b.as_any().is::<T>() {
+        Ok(*b.as_boxed_any().downcast::<T>().unwrap())
+    } else {
+        Err(b)
+    }
+}
+
+impl TLDynamic for UnreadableBag {
+    fn deserialize<R: Reader>(id: ConstructorId, reader: &mut R) -> Result<Box<TLObject>> {
+        let mut remainder = vec![];
+        reader.read_to_end(&mut remainder)?;
+        Ok(Box::new(UnreadableBag {
+            tl_id: id,
+            bytes: remainder,
+        }))
+    }
+
+    fn downcast_from(b: Box<TLObject>) -> ::std::result::Result<Self, Box<TLObject>>
+        where Self: Sized,
+    {
+        downcast::<Self>(b)
+    }
 }
 
 impl<T: TLObject + Type> TLDynamic for T {
     fn deserialize<R: Reader>(id: ConstructorId, reader: &mut R) -> Result<Box<TLObject>> {
         Ok(Box::new(<T as Type>::deserialize_boxed(id, reader)?))
+    }
+
+    default fn downcast_from(b: Box<TLObject>) -> ::std::result::Result<Self, Box<TLObject>>
+        where Self: Sized,
+    {
+        downcast::<Self>(b)
+    }
+}
+
+impl<T: TLObject + Type> TLDynamic for Vec<T> {
+    fn downcast_from(b: Box<TLObject>) -> ::std::result::Result<Self, Box<TLObject>>
+        where Self: Sized,
+    {
+        downcast::<Vec<Box<TLObject>>>(b)?
+            .into_iter()
+            .map(downcast::<T>)
+            .collect()
     }
 }

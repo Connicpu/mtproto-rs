@@ -34,7 +34,5 @@ pub mod error {
 
 pub mod tl;
 pub mod rpc;
-
-#[derive(TLDynamic)]
-#[tl_register_all]
-pub struct AllDynamicTypes;
+pub mod schema;
+mod manual_types;

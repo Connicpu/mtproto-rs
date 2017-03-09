@@ -8,10 +8,8 @@ pub struct Vector<T: Type> {
     pub elements: Vec<T>,
 }
 
-#[derive(Debug)]
-pub struct BareVector<T: Type> {
-    pub elements: Vec<T>,
-}
+#[derive(Debug, Clone)]
+pub struct Bare<T>(pub T);
 
 pub struct SendSlice<'a, T: Type + 'a> {
     pub elements: &'a [T],
@@ -30,12 +28,6 @@ impl<T: Type> Vector<T> {
         Vector {
             elements: vec,
         }
-    }
-}
-
-impl Vector<Box<tl::dynamic::TLObject>> {
-    pub fn register_dynamic<R: Reader>(cstore: &mut tl::dynamic::TLCtorMap<R>) {
-        cstore.0.insert(TYPE_ID, tl::dynamic::TLCtor(<Self as tl::dynamic::TLDynamic>::deserialize));
     }
 }
 
@@ -76,21 +68,13 @@ impl<T: Type> From<Vec<T>> for Vector<T> {
     }
 }
 
-impl<T: Type> BareVector<T> {
-    pub fn new() -> BareVector<T> {
-        BareVector {
-            elements: vec![],
-        }
-    }
-
-    pub fn from_elements(vec: Vec<T>) -> BareVector<T> {
-        BareVector {
-            elements: vec,
-        }
+impl<T: Type> Bare<Vec<T>> {
+    pub fn new() -> Self {
+        Bare(vec![])
     }
 }
 
-impl<T: Type> Type for BareVector<T> {
+impl<T: Type> Type for Bare<Vec<T>> {
     fn bare_type() -> bool {
         true
     }
@@ -108,7 +92,7 @@ impl<T: Type> Type for BareVector<T> {
         let vec = (0..count).into_iter()
             .map(|_| reader.read_bare())
             .collect::<tl::Result<Vec<T>>>()?;
-        Ok(BareVector { elements: vec })
+        Ok(Bare(vec))
     }
 
     fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> tl::Result<Self> {

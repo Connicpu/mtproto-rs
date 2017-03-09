@@ -12,10 +12,9 @@ pub use self::true_type::True;
 #[doc(inline)]
 pub use self::null_type::Null;
 #[doc(inline)]
-pub use self::vector::{Vector, BareVector, SendSlice};
+pub use self::vector::Bare;
 
 pub mod parsing;
-pub mod complex_types;
 pub mod dynamic;
 
 mod bool_type;
@@ -24,7 +23,7 @@ mod null_type;
 mod vector;
 
 /// The API version we've implemented against
-pub const MTPROTO_LAYER: u32 = 23;
+pub const MTPROTO_LAYER: i32 = 62;
 
 pub trait Type: Sized {
     fn bare_type() -> bool;
@@ -350,31 +349,6 @@ impl Type for () {
 
     fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
         Ok(())
-    }
-}
-
-impl<T: Type> Type for Option<T> {
-    fn bare_type() -> bool {
-        T::bare_type()
-    }
-
-    fn type_id(&self) -> Option<ConstructorId> {
-        self.as_ref().and_then(T::type_id)
-    }
-
-    fn serialize<W: Writer>(&self, writer: &mut W) -> Result<()> {
-        match self {
-            &Some(ref inner) => T::serialize(inner, writer),
-            &None => Ok(()),
-        }
-    }
-
-    fn deserialize<R: Reader>(reader: &mut R) -> Result<Self> {
-        T::deserialize(reader).map(Some)
-    }
-
-    fn deserialize_boxed<R: Reader>(id: ConstructorId, reader: &mut R) -> Result<Self> {
-        T::deserialize_boxed(id, reader).map(Some)
     }
 }
 

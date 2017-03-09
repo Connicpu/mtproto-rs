@@ -3,7 +3,7 @@ use std::cmp::min;
 use std::io::{self, Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-use tl::dynamic::{TLCtorMap, TLObject, UnreadableBag};
+use tl::dynamic::{TLCtorMap, TLObject};
 use tl;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -117,17 +117,8 @@ impl<R: Read> Reader for ReadContext<R> {
 
     fn read_polymorphic(&mut self) -> tl::Result<Box<TLObject>> {
         let id: ConstructorId = self.read_bare()?;
-        match self.ctors.as_ref().and_then(|m| m.0.get(&id)).map(|c| c.0) {
-            Some(ctor) => ctor(id, self),
-            None => {
-                let mut remainder = vec![];
-                self.read_to_end(&mut remainder)?;
-                Ok(Box::new(UnreadableBag {
-                    tl_id: id,
-                    bytes: remainder,
-                }))
-            },
-        }
+        let ctor = self.ctors.as_ref().map(|m| m.get(&id).0).unwrap();
+        ctor(id, self)
     }
 }
 

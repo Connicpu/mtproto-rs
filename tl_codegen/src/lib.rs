@@ -22,7 +22,7 @@ pub mod parser {
     }
 
     impl Type {
-        fn names_vec(&self) -> Option<&Vec<String>> {
+        pub fn names_vec(&self) -> Option<&Vec<String>> {
             use self::Type::*;
             match self {
                 &Int |
@@ -80,7 +80,7 @@ pub mod parser {
         pub output: Type,
     }
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
     pub enum Delimiter {
         Types,
         Functions,
@@ -217,6 +217,7 @@ pub mod parser {
 pub use parser::{Constructor, Delimiter, Field, Item, Type};
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::mem;
 
 #[derive(Debug, Default)]
 struct Constructors(Vec<Constructor>);
@@ -228,6 +229,7 @@ struct AllConstructors {
 }
 
 fn filter_items(iv: &mut Vec<Item>) {
+    let mut ensure_types = vec![Item::Delimiter(Delimiter::Types)];
     iv.retain(|i| {
         let c = match i {
             &Item::Constructor(ref c) => c,
@@ -235,12 +237,19 @@ fn filter_items(iv: &mut Vec<Item>) {
         };
         // Blacklist some annoying inconsistencies.
         match c.variant.name() {
-            Some("future_salt") |
-            Some("future_salts") |
+            Some("boolTrue") |
+            Some("boolFalse") |
+            Some("true") |
             Some("vector") => false,
+            Some("future_salt") |
+            Some("future_salts") => {
+                ensure_types.push(Item::Constructor(c.clone()));
+                false
+            },
             _ => true,
         }
-    })
+    });
+    iv.extend(ensure_types);
 }
 
 fn partition_by_delimiter_and_namespace(iv: Vec<Item>) -> AllConstructors {
@@ -394,12 +403,14 @@ fn names_to_type(names: &Vec<String>) -> TypeIR {
             "true" => return TypeIR::copyable(quote! { () }),
             "int" => return TypeIR::copyable(quote! { i32 }),
             "long" => return TypeIR::copyable(quote! { i64 }),
-            "int128" => return TypeIR::copyable(quote! { #type_prefix i128 }),
-            "int256" => return TypeIR::copyable(quote! { #type_prefix i256 }),
+            "int128" => return TypeIR::copyable(quote! { #type_prefix Int128 }),
+            "int256" => return TypeIR::copyable(quote! { #type_prefix Int256 }),
             "double" => return TypeIR::copyable(quote! { f64 }),
             "bytes" => return TypeIR::noncopyable(quote! { Vec<u8> }),
             "string" => return TypeIR::noncopyable(quote! { String }),
+            "vector" => return TypeIR::noncopyable(quote! { #type_prefix BareVec }),
             "Vector" => return TypeIR::noncopyable(quote! { Vec }),
+            "future_salt" => return TypeIR::noncopyable(quote! { #type_prefix FutureSalt }),
             _ => (),
         }
     }
@@ -462,6 +473,13 @@ impl Field {
 }
 
 impl Constructor {
+    fn fixup(&mut self, which: Delimiter) {
+        if which == Delimiter::Functions {
+            self.fixup_output();
+        }
+        self.fixup_fields();
+    }
+
     fn fixup_output(&mut self) {
         if self.is_output_a_type_parameter() {
             self.output = Type::TypeParameter(self.output.name().unwrap().into());
@@ -481,14 +499,54 @@ impl Constructor {
         false
     }
 
-    fn flag_field_names(&self) -> HashSet<syn::Ident> {
+    fn fixup_fields(&mut self) {
+        match self.variant.name() {
+            Some("resPQ") |
+            Some("p_q_inner_data") |
+            Some("server_DH_params_ok") |
+            Some("server_DH_inner_data") |
+            Some("client_DH_inner_data") |
+            Some("req_DH_params") |
+            Some("set_client_DH_params") => (),
+            _ => return,
+        }
+        for f in &mut self.fields {
+            match &mut f.ty {
+                &mut Type::Named(ref mut v) if v.len() == 1 && v[0] == "string" => {
+                    v[0] = "bytes".into();
+                },
+                _ => (),
+            }
+        }
+    }
+
+    fn flag_field_names(&self) -> HashSet<&str> {
         let mut ret = HashSet::new();
         for f in &self.fields {
             if let Some((flag, _)) = f.ty.flag_field() {
-                ret.insert(no_conflict_ident(flag));
+                ret.insert(flag);
             }
         }
         ret
+    }
+
+    fn flag_field_idents(&self) -> HashSet<syn::Ident> {
+        self.flag_field_names()
+            .into_iter()
+            .map(no_conflict_ident)
+            .collect()
+    }
+
+    fn non_flag_fields<'a>(&'a self) -> Box<Iterator<Item = &'a Field> + 'a> {
+        let flag_fields = self.flag_field_names();
+        Box::new({
+            self.fields.iter()
+                .filter(move |f| {
+                    f.name.as_ref()
+                        .map(|s| !flag_fields.contains(s.as_str()))
+                        .unwrap_or(true)
+                })
+        })
     }
 
     fn fields_tokens(&self, pub_: quote::Tokens, trailer: quote::Tokens) -> quote::Tokens {
@@ -496,7 +554,7 @@ impl Constructor {
         if self.fields.is_empty() {
             quote! { #trailer }
         } else {
-            let fields = self.fields.iter()
+            let fields = self.non_flag_fields()
                 .map(Field::as_field);
             quote! {
                 { #( #pub_ #fields , )* }
@@ -542,114 +600,79 @@ impl Constructor {
         quote! { <#(#tys: #traits),*> }
     }
 
-    fn as_struct_update_flags_method(&self) -> Option<quote::Tokens> {
-        let flag_fields = self.flag_field_names();
+    fn as_struct_determine_flags(&self, field_prefix: quote::Tokens) -> Option<(HashSet<syn::Ident>, quote::Tokens)> {
+        let flag_fields = self.flag_field_idents();
         if flag_fields.is_empty() {
             return None;
         }
-        let fields = self.fields.iter()
-            .filter_map(|f| {
-                let name = no_conflict_ident(f.name.as_ref().unwrap());
-                f.ty.flag_field().map(|(flag_field, bit)| {
-                    let flag_field = no_conflict_ident(flag_field);
-                    quote! {
-                        if self.#name.is_some() {
-                            self.#flag_field |= 1 << #bit;
+        let determination = {
+            let fields = self.fields.iter()
+                .filter_map(|f| {
+                    let name = no_conflict_ident(f.name.as_ref().unwrap());
+                    f.ty.flag_field().map(|(flag_field, bit)| {
+                        let flag_field = no_conflict_ident(flag_field);
+                        quote! {
+                            if #field_prefix #name.is_some() {
+                                #flag_field |= 1 << #bit;
+                            }
                         }
-                    }
-                })
-            });
-
-        Some(quote! {
-            pub fn update_flags(&mut self) {
+                    })
+                });
+            let flag_fields = &flag_fields;
+            quote! {
+                #( let mut #flag_fields = 0i32; )*
                 #( #fields )*
             }
-
-            pub fn clear_and_update_flags(&mut self) {
-                #( self.#flag_fields = 0; )*
-                self.update_flags();
-            }
-        })
+        };
+        Some((flag_fields, determination))
     }
 
     fn as_struct_base(&self, name: &syn::Ident) -> quote::Tokens {
         let generics = self.generics();
-        let impl_block = self.as_struct_update_flags_method()
-            .map(|b| quote! {
-                impl #generics #name #generics {
-                    #b
-                }
-            })
-            .unwrap_or_else(|| quote!());
         let fields = self.fields_tokens(quote! {pub}, quote! {;});
         quote! {
             #[derive(Debug, Clone)]
-            pub struct #name #generics #fields #impl_block
+            pub struct #name #generics #fields
         }
     }
 
-    fn as_struct_deserialize(&self) -> (quote::Tokens, quote::Tokens) {
+    fn as_struct_deserialize(&self) -> (HashSet<syn::Ident>, quote::Tokens) {
         if self.fields.is_empty() {
-            return (quote!(), quote!());
+            return (HashSet::new(), quote!());
         }
-        let flag_fields = self.flag_field_names();
+        let flag_fields = self.flag_field_idents();
+        let mut flags_to_read = vec![];
         let constructor = {
             let fields = self.fields.iter()
-                .map(|f| {
+                .filter_map(|f| {
                     let name = no_conflict_ident(f.name.as_ref().unwrap());
-                    if flag_fields.contains(&name) {
-                        quote! { #name: { #name = _reader.read_generic()?; #name } }
+                    let mut expr = if flag_fields.contains(&name) {
+                        flags_to_read.push(name);
+                        return None;
                     } else if let Some((flag_field, bit)) = f.ty.flag_field() {
                         let flag_field = no_conflict_ident(flag_field);
                         quote! {
-                            #name: if #flag_field & (1 << #bit) == 0 {
+                            if #flag_field & (1 << #bit) == 0 {
                                 None
                             } else {
                                 Some(_reader.read_generic()?)
                             }
                         }
                     } else {
-                        quote! { #name: _reader.read_generic()? }
+                        quote!(_reader.read_generic()?)
+                    };
+                    if !flags_to_read.is_empty() {
+                        let flags = mem::replace(&mut flags_to_read, vec![]);
+                        expr = quote!({
+                            #( #flags = _reader.read_generic()?; )*
+                            #expr
+                        })
                     }
+                    Some(quote!(#name: #expr))
                 });
             quote!({ #( #fields, )* })
         };
-        let flag_lets = quote! {
-            #( let #flag_fields; )*
-        };
-        (flag_lets, constructor)
-    }
-
-    fn as_variant_update_flags(&self, name: &syn::Ident) -> Option<(quote::Tokens, quote::Tokens)> {
-        let flag_fields_ = self.flag_field_names();
-        if flag_fields_.is_empty() {
-            return None;
-        }
-        let (field_names, field_tests): (Vec<_>, Vec<_>) = self.fields.iter()
-            .filter_map(|f| {
-                let name = no_conflict_ident(f.name.as_ref().unwrap());
-                f.ty.flag_field().map(|(flag_field, bit)| {
-                    let flag_field = no_conflict_ident(flag_field);
-                    (quote!(#name), quote! {
-                        if #name.is_some() {
-                            *#flag_field |= 1 << #bit;
-                        }
-                    })
-                })
-            })
-            .unzip();
-
-        let flag_fields = &flag_fields_;
-
-        Some((quote! {
-            #name { #( ref mut #flag_fields ),* , #( ref #field_names ),* , .. } => {
-                #( #field_tests )*
-            }
-        }, quote! {
-            #name { #( ref mut #flag_fields ),* , .. } => {
-                #( *#flag_fields = 0; )*
-            }
-        }))
+        (flag_fields, constructor)
     }
 
     fn as_struct(&self) -> quote::Tokens {
@@ -659,12 +682,16 @@ impl Constructor {
             .map(|d| quote! { let &#d = self; })
             .unwrap_or_else(|| quote!());
         let serialize_stmts = self.as_variant_serialize();
-        let (flag_lets, deserialize) = self.as_struct_deserialize();
+        let (flag_fields_, deserialize) = self.as_struct_deserialize();
+        let flag_fields = &flag_fields_;
         let type_impl = self.as_type_impl(
             &name,
             quote!(Some(#tl_id)),
             quote!(#serialize_destructure #serialize_stmts Ok(())),
-            quote!(Ok({ #flag_lets #name #deserialize })),
+            quote!(Ok({
+                #( let #flag_fields: i32; )*
+                #name #deserialize
+            })),
             quote! {
                 if _id == #tl_id {
                     Self::deserialize(_reader)
@@ -687,7 +714,7 @@ impl Constructor {
         if self.fields.is_empty() {
             return None;
         }
-        let fields = self.fields.iter()
+        let fields = self.non_flag_fields()
             .map(|f| {
                 let name = no_conflict_ident(f.name.as_ref().unwrap());
                 quote! { ref #name }
@@ -698,10 +725,14 @@ impl Constructor {
     }
 
     fn as_variant_serialize(&self) -> quote::Tokens {
+        let (flag_fields, determine_flags) = self.as_struct_determine_flags(quote!())
+            .unwrap_or_else(|| (HashSet::new(), quote!()));
         let fields = self.fields.iter()
             .map(|f| {
                 let name = no_conflict_ident(f.name.as_ref().unwrap());
-                if f.ty.flag_field().is_some() {
+                if flag_fields.contains(&name) {
+                    quote! { _writer.write_generic(&#name)?; }
+                } else if f.ty.flag_field().is_some() {
                     quote! {
                         if let &Some(ref inner) = #name {
                             _writer.write_generic(inner)?;
@@ -712,6 +743,7 @@ impl Constructor {
                 }
             });
         quote! {
+            #determine_flags
             #( #fields )*
         }
     }
@@ -797,10 +829,16 @@ impl Constructor {
 }
 
 impl Constructors {
+    fn fixup(&mut self, delim: Delimiter) {
+        for c in &mut self.0 {
+            c.fixup(delim);
+        }
+    }
+
     fn coalesce_methods(&self) -> BTreeMap<&str, BTreeMap<&Type, BTreeSet<&Constructor>>> {
         let mut map: BTreeMap<&str, BTreeMap<&Type, BTreeSet<&Constructor>>> = BTreeMap::new();
         for cons in &self.0 {
-            for field in &cons.fields {
+            for field in cons.non_flag_fields() {
                 let name = match field.name.as_ref() {
                     Some(s) => s.as_str(),
                     None => continue,
@@ -813,45 +851,6 @@ impl Constructors {
             }
         }
         map
-    }
-
-    fn as_update_flags_method(&self, enum_name: &syn::Ident) -> Option<quote::Tokens> {
-        let mut any_flags = false;
-        let (flag_sets, flag_clears): (Vec<_>, Vec<_>) = self.0.iter()
-            .map(|c| {
-                let variant_name = c.variant_name();
-                c.as_variant_update_flags(&variant_name)
-                    .map(|(flag_set, flag_clear)| {
-                        any_flags = true;
-                        (quote!(&mut #enum_name :: #flag_set),
-                         quote!(&mut #enum_name :: #flag_clear))
-                    })
-                    .unwrap_or_else(|| {
-                        let pat = c.as_empty_pattern();
-                        let empty = quote! { &mut #enum_name :: #pat => () };
-                        (empty.clone(), empty)
-                    })
-            })
-            .unzip();
-
-        if !any_flags {
-            return None;
-        }
-
-        Some(quote! {
-            pub fn update_flags(&mut self) {
-                match self {
-                    #( #flag_sets, )*
-                }
-            }
-
-            pub fn clear_and_update_flags(&mut self) {
-                match self {
-                    #( #flag_clears, )*
-                }
-                self.update_flags();
-            }
-        })
     }
 
     fn determine_methods(&self, enum_name: &syn::Ident) -> quote::Tokens {
@@ -897,8 +896,6 @@ impl Constructors {
                 }
             });
         }
-
-        methods.extend(self.as_update_flags_method(enum_name));
 
         if methods.is_empty() {
             quote! {}
@@ -984,8 +981,11 @@ impl Constructors {
             .map(|c| {
                 let variant_name = c.variant_name();
                 let tl_id = c.tl_id();
-                let (flag_lets, deserialize) = c.as_struct_deserialize();
-                quote! { #tl_id => { #flag_lets Ok(#enum_name :: #variant_name #deserialize) } }
+                let (flag_fields, deserialize) = c.as_struct_deserialize();
+                quote!(#tl_id => {
+                    #( let #flag_fields: i32; )*
+                    Ok(#enum_name :: #variant_name #deserialize)
+                })
             });
         quote! {
             match _id {
@@ -1021,16 +1021,13 @@ impl Constructors {
         }
     }
 
-    fn as_dynamic_ctors(&self) -> Vec<(u32, quote::Tokens)> {
+    fn as_dynamic_ctors(&self) -> Vec<(Option<Vec<String>>, quote::Tokens)> {
         let ty = self.0[0].output.as_type().unboxed();
+        let ty_name = self.0[0].output.names_vec();
         self.0.iter()
             .map(|c| {
                 let tl_id = c.tl_id();
-                (c.tl_id, quote! {
-                    cstore.0.insert(
-                        #tl_id,
-                        TLCtor(<#ty as TLDynamic>::deserialize))
-                })
+                (ty_name.cloned(), quote!(cstore.add::<#ty>(#tl_id)))
             })
             .collect()
     }
@@ -1045,17 +1042,18 @@ pub fn generate_code_for(input: &str) -> String {
 
     let mut items = vec![quote! {
         #![allow(non_camel_case_types)]
-        pub type i128 = (i64, i64);
-        pub type i256 = (i128, i128);
-        use rpc::functions::FutureSalts;
+        pub use manual_types::*;
     }];
 
-    let mut dynamic_ctors: BTreeMap<u32, quote::Tokens> = BTreeMap::new();
-    for (ns, constructor_map) in constructors.types {
+    let mut dynamic_ctors = BTreeMap::new();
+    for (ns, mut constructor_map) in constructors.types {
         dynamic_ctors.extend(
             constructor_map.values().flat_map(Constructors::as_dynamic_ctors));
-        let substructs = constructor_map.values()
-            .map(Constructors::as_struct);
+        let substructs = constructor_map.values_mut()
+            .map(|mut c| {
+                c.fixup(Delimiter::Functions);
+                c.as_struct()
+            });
         match ns {
             None => items.extend(substructs),
             Some(name) => {
@@ -1072,8 +1070,7 @@ pub fn generate_code_for(input: &str) -> String {
     let ctors = dynamic_ctors.values();
     items.push(quote! {
         pub fn register_ctors<R: ::tl::parsing::Reader>(cstore: &mut ::tl::dynamic::TLCtorMap<R>) {
-            use tl::dynamic::{TLCtor, TLDynamic, TLObject};
-            ::tl::Vector::<Box<TLObject>>::register_dynamic(cstore);
+            register_manual_ctors(cstore);
             #( #ctors; )*
         }
     });
@@ -1083,7 +1080,7 @@ pub fn generate_code_for(input: &str) -> String {
         substructs.sort_by_key(|c| c.variant.clone());
         let substructs = substructs.into_iter()
             .map(|mut c| {
-                c.fixup_output();
+                c.fixup(Delimiter::Functions);
                 c.as_function_struct()
             });
         match ns {
