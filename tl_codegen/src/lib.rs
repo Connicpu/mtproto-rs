@@ -314,6 +314,7 @@ fn all_types_prefix() -> quote::Tokens {
 struct TypeIR {
     tokens: quote::Tokens,
     is_copy: bool,
+    is_unit: bool,
     needs_box: bool,
     with_option: bool,
 }
@@ -323,6 +324,7 @@ impl TypeIR {
         TypeIR {
             tokens: tokens,
             is_copy: true,
+            is_unit: false,
             needs_box: false,
             with_option: false,
         }
@@ -332,6 +334,7 @@ impl TypeIR {
         TypeIR {
             tokens: tokens,
             is_copy: false,
+            is_unit: false,
             needs_box: false,
             with_option: false,
         }
@@ -341,7 +344,18 @@ impl TypeIR {
         TypeIR {
             tokens: tokens,
             is_copy: false,
+            is_unit: false,
             needs_box: true,
+            with_option: false,
+        }
+    }
+
+    fn unit() -> Self {
+        TypeIR {
+            tokens: quote!(()),
+            is_copy: true,
+            is_unit: true,
+            needs_box: false,
             with_option: false,
         }
     }
@@ -369,27 +383,59 @@ impl TypeIR {
         }
     }
 
+    fn needs_option(&self) -> bool {
+        self.with_option && !self.is_unit
+    }
+
     fn unboxed(self) -> quote::Tokens {
-        wrap_option_type(self.with_option, self._unboxed())
+        wrap_option_type(self.needs_option(), self._unboxed())
     }
 
     fn boxed(self) -> quote::Tokens {
-        wrap_option_type(self.with_option, self._boxed())
+        wrap_option_type(self.needs_option(), self._boxed())
     }
 
     fn ref_type(self) -> quote::Tokens {
-        wrap_option_type(self.with_option, self._ref_type())
+        wrap_option_type(self.needs_option(), self._ref_type())
     }
 
     fn option_wrapped(self) -> Self {
-        TypeIR {
-            with_option: true,
-            ..self
+        if self.is_unit {
+            TypeIR {
+                tokens: quote!(bool),
+                is_copy: true,
+                is_unit: true,
+                needs_box: false,
+                with_option: true,
+            }
+        } else {
+            TypeIR {
+                with_option: true,
+                ..self
+            }
         }
     }
 
     fn ref_prefix(&self) -> quote::Tokens {
         if self.is_copy {quote!()} else {quote!(ref)}
+    }
+
+    fn reference_prefix(&self) -> quote::Tokens {
+        if self.is_copy {quote!()} else {quote!(&)}
+    }
+
+    fn local_reference_prefix(&self) -> quote::Tokens {
+        if self.is_copy {quote!(&)} else {quote!()}
+    }
+
+    fn is_defined_trailer(&self) -> quote::Tokens {
+        if !self.with_option {
+            unimplemented!()
+        } else if self.is_unit {
+            quote!()
+        } else {
+            quote!(.is_some())
+        }
     }
 }
 
@@ -398,7 +444,7 @@ fn names_to_type(names: &Vec<String>) -> TypeIR {
     if names.len() == 1 {
         match names[0].as_str() {
             "Bool" => return TypeIR::copyable(quote! { bool }),
-            "true" => return TypeIR::copyable(quote! { () }),
+            "true" => return TypeIR::unit(),
             "int" => return TypeIR::copyable(quote! { i32 }),
             "long" => return TypeIR::copyable(quote! { i64 }),
             "int128" => return TypeIR::copyable(quote! { #type_prefix Int128 }),
@@ -609,8 +655,9 @@ impl Constructor {
                     let name = no_conflict_ident(f.name.as_ref().unwrap());
                     f.ty.flag_field().map(|(flag_field, bit)| {
                         let flag_field = no_conflict_ident(flag_field);
+                        let is_defined = f.ty.as_type().is_defined_trailer();
                         quote! {
-                            if #field_prefix #name.is_some() {
+                            if #field_prefix #name #is_defined {
                                 #flag_field |= 1 << #bit;
                             }
                         }
@@ -649,11 +696,16 @@ impl Constructor {
                         return None;
                     } else if let Some((flag_field, bit)) = f.ty.flag_field() {
                         let flag_field = no_conflict_ident(flag_field);
-                        quote! {
-                            if #flag_field & (1 << #bit) == 0 {
-                                None
-                            } else {
-                                Some(_reader.read_tl()?)
+                        let predicate = quote!(#flag_field & (1 << #bit) != 0);
+                        if f.ty.as_type().is_unit {
+                            predicate
+                        } else {
+                            quote! {
+                                if #predicate {
+                                    Some(_reader.read_tl()?)
+                                } else {
+                                    None
+                                }
                             }
                         }
                     } else {
@@ -710,8 +762,9 @@ impl Constructor {
         }
         let fields = self.non_flag_fields()
             .map(|f| {
+                let prefix = f.ty.as_type().ref_prefix();
                 let name = no_conflict_ident(f.name.as_ref().unwrap());
-                quote! { ref #name }
+                quote! { #prefix #name }
             });
         Some(quote! {
             #name { #( #fields ),* }
@@ -724,16 +777,23 @@ impl Constructor {
         let fields = self.fields.iter()
             .map(|f| {
                 let name = no_conflict_ident(f.name.as_ref().unwrap());
+                let ty = f.ty.as_type();
                 if flag_fields.contains(&name) {
                     quote! { _writer.write_tl(&#name)?; }
+                } else if ty.is_unit {
+                    quote!()
                 } else if f.ty.flag_field().is_some() {
+                    let outer_ref = ty.reference_prefix();
+                    let inner_ref = ty.ref_prefix();
+                    let local_ref = ty.local_reference_prefix();
                     quote! {
-                        if let &Some(ref inner) = #name {
-                            _writer.write_tl(inner)?;
+                        if let #outer_ref Some(#inner_ref inner) = #name {
+                            _writer.write_tl(#local_ref inner)?;
                         }
                     }
                 } else {
-                    quote! { _writer.write_tl(#name)?; }
+                    let prefix = ty.local_reference_prefix();
+                    quote! { _writer.write_tl(#prefix #name)?; }
                 }
             });
         quote! {
@@ -859,31 +919,33 @@ impl Constructors {
             }
             let name = no_conflict_ident(name);
             let mut ty_ir = output_ty.as_type();
-            if constructors.len() != all_constructors {
+            let exhaustive = constructors.len() == all_constructors;
+            if !exhaustive {
                 ty_ir.with_option = true;
             }
-            let value = wrap_option_value(ty_ir.with_option, quote!(#name));
+            let force_option = !exhaustive && ty_ir.is_unit;
+            let value = wrap_option_value(force_option || ty_ir.needs_option(), quote!(#name));
             let ref_ = ty_ir.ref_prefix();
-            let field = if output_ty.is_optional() {
-                quote! { #name: Some(#ref_ #name) }
+            let field = if output_ty.is_optional() && !ty_ir.is_unit {
+                quote!(#name: Some(#ref_ #name))
             } else {
-                quote! { #ref_ #name }
+                quote!(#ref_ #name)
             };
             let constructors = constructors.into_iter()
                 .map(|c| {
                     let cons_name = c.variant_name();
-                    quote! { & #enum_name :: #cons_name { #field, .. } => #value, }
+                    quote!(&#enum_name::#cons_name { #field, .. } => #value)
                 });
-            let trailer = if !ty_ir.with_option {
-                quote! {}
+            let trailer = if !ty_ir.needs_option() && exhaustive {
+                quote!()
             } else {
-                quote! { _ => None, }
+                quote!(_ => None)
             };
-            let ty = ty_ir.ref_type();
+            let ty = wrap_option_type(force_option, ty_ir.ref_type());
             methods.push(quote! {
                 pub fn #name(&self) -> #ty {
                     match self {
-                        #( #constructors )*
+                        #( #constructors, )*
                         #trailer
                     }
                 }
@@ -891,7 +953,7 @@ impl Constructors {
         }
 
         if methods.is_empty() {
-            quote! {}
+            quote!()
         } else {
             quote! {
                 impl #enum_name {
