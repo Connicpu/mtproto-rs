@@ -1,4 +1,4 @@
-use std::io;
+use std::{cmp, io};
 
 use chrono::{DateTime, Duration, UTC, Timelike, TimeZone};
 use byteorder::{LittleEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
@@ -74,8 +74,12 @@ impl Session {
     }
 
     fn latest_server_salt(&mut self) -> i64 {
-        let time = UTC::now();
-        self.server_salts.retain(|s| &s.valid_until > &time);
+        let time = {
+            let last_salt = self.server_salts.last().unwrap();
+            // Make sure at least one salt is retained.
+            cmp::min(UTC::now(), last_salt.valid_until.clone())
+        };
+        self.server_salts.retain(|s| &s.valid_until >= &time);
         self.server_salts.first().unwrap().salt
     }
 
@@ -188,9 +192,12 @@ impl Session {
         let payload = &decrypted[pos..pos+len];
         let computed_message_hash = sha1_bytes(&[&decrypted[..pos+len]])?;
         let computed_message_key = &computed_message_hash[4..20];
-        assert!(&message[8..24] == computed_message_key);
-        assert!(self.server_salts.iter().any(|s| s.salt == server_salt));
-        assert!(session_id == self.session_id);
+        if &message[8..24] != computed_message_key || session_id != self.session_id {
+            return Err(::error::ErrorKind::AuthenticationFailure.into());
+        }
+        if !self.server_salts.iter().any(|s| s.salt == server_salt) {
+            println!("salt failure: {} not in {:#?}", server_salt, self.server_salts);
+        }
         Ok(Ok(InboundPayload {
             message_id: message_id,
             payload: payload.into(),
@@ -218,6 +225,6 @@ fn sha1_nonces(nonces: &[Int128]) -> Result<Vec<u8>> {
     Ok(hasher.finish()?)
 }
 
-pub trait RpcFunction {
-    type Reply;
+pub trait RpcFunction: ::tl::WriteType {
+    type Reply: ::tl::dynamic::TLDynamic + 'static;
 }
