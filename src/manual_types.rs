@@ -1,6 +1,5 @@
 use tl::dynamic::{LengthAndObject, TLCtorMap, TLObject};
-use tl::parsing::ConstructorId;
-use tl::Bare;
+use tl::{Bare, VEC_TYPE_ID};
 
 #[derive(Debug, TLType)]
 #[tl_id(_f35c6d01)]
@@ -33,5 +32,5 @@ pub fn register_manual_ctors<R: ::tl::parsing::Reader>(cstore: &mut TLCtorMap<R>
     cstore.add::<GzipPacked>(GzipPacked::TYPE_ID);
     cstore.add::<MessageContainer>(MessageContainer::TYPE_ID);
     cstore.add::<RpcResult>(RpcResult::TYPE_ID);
-    cstore.add::<Vec<Box<TLObject>>>(ConstructorId(0x1cb5c415));
+    cstore.add::<Vec<Box<TLObject>>>(VEC_TYPE_ID);
 }

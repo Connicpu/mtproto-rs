@@ -1,10 +1,10 @@
-use super::{Result, Type};
 use std::fmt;
 use std::any::Any;
 use std::collections::HashMap;
-use tl::parsing::{ConstructorId, Reader, Writer};
+use tl::{self, Result};
+use tl::parsing::{ConstructorId, Reader};
 
-pub struct TLCtor<R: Reader>(pub fn(ConstructorId, &mut R) -> Result<Box<TLObject>>);
+pub struct TLCtor<R: Reader>(pub fn(Option<ConstructorId>, &mut R) -> Result<Box<TLObject>>);
 pub struct TLCtorMap<R: Reader>(pub HashMap<ConstructorId, TLCtor<R>>);
 
 impl<R: Reader> Clone for TLCtor<R> {
@@ -33,55 +33,46 @@ impl<R: Reader> Default for TLCtorMap<R> {
     }
 }
 
-pub trait TLObject: Any {
-    fn tl_id(&self) -> Option<ConstructorId>;
+pub trait TLObject: Any + tl::IdentifiableType {
     fn as_any(&self) -> &Any;
     fn as_boxed_any(self: Box<Self>) -> Box<Any>;
 }
 
-impl<T: Type + Any> TLObject for T {
-    fn tl_id(&self) -> Option<ConstructorId> {
-        self.type_id()
-    }
-
+impl<T: Any + tl::IdentifiableType> TLObject for T {
     default fn as_any(&self) -> &Any { self }
     default fn as_boxed_any(self: Box<Self>) -> Box<Any> { self }
 }
 
 #[derive(Debug)]
 pub struct UnreadableBag {
-    pub tl_id: ConstructorId,
+    pub tl_id: Option<ConstructorId>,
     pub bytes: Vec<u8>,
 }
 
-impl TLObject for UnreadableBag {
-    fn tl_id(&self) -> Option<ConstructorId> {
-        Some(self.tl_id)
+impl tl::IdentifiableType for UnreadableBag {
+    fn type_id(&self) -> Option<ConstructorId> {
+        self.tl_id
     }
+}
 
+impl TLObject for UnreadableBag {
     fn as_any(&self) -> &Any { self }
     fn as_boxed_any(self: Box<Self>) -> Box<Any> { self }
 }
 
-impl Type for Box<TLObject> {
-    fn bare_type() -> bool {
-        true
-    }
-
+impl tl::IdentifiableType for Box<TLObject> {
     fn type_id(&self) -> Option<ConstructorId> {
-        None
+        tl::IdentifiableType::type_id(&**self)
     }
+}
 
-    fn serialize<W: Writer>(&self, _: &mut W) -> Result<()> {
+impl tl::ReadType for Box<TLObject> {
+    fn deserialize_bare<R: Reader>(_: Option<ConstructorId>, _: &mut R) -> Result<Self> {
         unimplemented!()
     }
 
     fn deserialize<R: Reader>(reader: &mut R) -> Result<Self> {
         reader.read_polymorphic()
-    }
-
-    fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
-        unimplemented!()
     }
 }
 
@@ -97,39 +88,28 @@ impl TLObject for Box<TLObject> {
 
 impl fmt::Debug for TLObject {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "(boxed TLObject tl_id:{:?})", self.tl_id())
+        write!(f, "(boxed TLObject tl_id:{:?})", self.type_id())
     }
 }
 
 #[derive(Debug)]
 pub struct LengthAndObject(pub Box<TLObject>);
 
-impl Type for LengthAndObject {
-    fn bare_type() -> bool {
-        true
-    }
-
-    fn type_id(&self) -> Option<ConstructorId> {
-        None
-    }
-
-    fn serialize<W: Writer>(&self, _: &mut W) -> Result<()> {
-        unimplemented!()
-    }
-
-    fn deserialize<R: Reader>(reader: &mut R) -> Result<Self> {
-        let len: u32 = reader.read_bare()?;
+impl tl::ReadType for LengthAndObject {
+    fn deserialize_bare<R: Reader>(id: Option<ConstructorId>, reader: &mut R) -> Result<Self> {
+        super::ensure_type_id(None, id)?;
+        let len: u32 = reader.read_tl()?;
         let ret = reader.take(len as usize).read_polymorphic()?;
         Ok(LengthAndObject(ret))
     }
 
-    fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> Result<Self> {
-        unimplemented!()
+    fn deserialize<R: Reader>(reader: &mut R) -> Result<Self> {
+        Self::deserialize_bare(None, reader)
     }
 }
 
 pub trait TLDynamic: TLObject {
-    fn deserialize<R: Reader>(id: ConstructorId, reader: &mut R) -> Result<Box<TLObject>>;
+    fn deserialize<R: Reader>(id: Option<ConstructorId>, reader: &mut R) -> Result<Box<TLObject>>;
     fn downcast_from(b: Box<TLObject>) -> ::std::result::Result<Self, Box<TLObject>>
         where Self: Sized;
 }
@@ -143,7 +123,7 @@ fn downcast<T: TLObject>(b: Box<TLObject>) -> ::std::result::Result<T, Box<TLObj
 }
 
 impl TLDynamic for UnreadableBag {
-    fn deserialize<R: Reader>(id: ConstructorId, reader: &mut R) -> Result<Box<TLObject>> {
+    fn deserialize<R: Reader>(id: Option<ConstructorId>, reader: &mut R) -> Result<Box<TLObject>> {
         let mut remainder = vec![];
         reader.read_to_end(&mut remainder)?;
         Ok(Box::new(UnreadableBag {
@@ -159,9 +139,9 @@ impl TLDynamic for UnreadableBag {
     }
 }
 
-impl<T: TLObject + Type> TLDynamic for T {
-    fn deserialize<R: Reader>(id: ConstructorId, reader: &mut R) -> Result<Box<TLObject>> {
-        Ok(Box::new(<T as Type>::deserialize_boxed(id, reader)?))
+impl<T: ?Sized + TLObject + tl::ReadType> TLDynamic for T {
+    fn deserialize<R: Reader>(id: Option<ConstructorId>, reader: &mut R) -> Result<Box<TLObject>> {
+        Ok(Box::new(<T as tl::ReadType>::deserialize_bare(id, reader)?))
     }
 
     default fn downcast_from(b: Box<TLObject>) -> ::std::result::Result<Self, Box<TLObject>>
@@ -171,7 +151,7 @@ impl<T: TLObject + Type> TLDynamic for T {
     }
 }
 
-impl<T: TLObject + Type> TLDynamic for Vec<T> {
+impl<T: TLObject + tl::ReadType> TLDynamic for Vec<T> {
     fn downcast_from(b: Box<TLObject>) -> ::std::result::Result<Self, Box<TLObject>>
         where Self: Sized,
     {

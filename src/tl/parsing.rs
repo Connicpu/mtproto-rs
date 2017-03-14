@@ -16,16 +16,11 @@ impl fmt::Debug for ConstructorId {
 }
 
 pub trait Reader: Read {
-    fn read_boxed<T: tl::Type>(&mut self) -> tl::Result<T>;
-    fn read_bare<T: tl::Type>(&mut self) -> tl::Result<T>;
+    fn read_tl<T: tl::ReadType>(&mut self) -> tl::Result<T>;
     fn read_polymorphic(&mut self) -> tl::Result<Box<TLObject>>;
 
-    fn read_generic<T: tl::Type>(&mut self) -> tl::Result<T> {
-        if T::bare_type() {
-            self.read_bare()
-        } else {
-            self.read_boxed()
-        }
+    fn read_type_id(&mut self) -> tl::Result<ConstructorId> {
+        Ok(ConstructorId(self.read_u32::<LittleEndian>()?))
     }
 
     fn aligned<'a>(&'a mut self, alignment: usize) -> AlignedReader<'a, Self> {
@@ -45,16 +40,7 @@ pub trait Reader: Read {
 }
 
 pub trait Writer: Write {
-    fn write_boxed<T: tl::Type>(&mut self, value: &T) -> tl::Result<()>;
-    fn write_bare<T: tl::Type>(&mut self, value: &T) -> tl::Result<()>;
-
-    fn write_generic<T: tl::Type>(&mut self, value: &T) -> tl::Result<()> {
-        if T::bare_type() {
-            self.write_bare(value)
-        } else {
-            self.write_boxed(value)
-        }
-    }
+    fn write_tl<T: tl::WriteType>(&mut self, value: &T) -> tl::Result<()>;
 
     fn aligned<'a>(&'a mut self, alignment: usize) -> AlignedWriter<'a, Self> {
         AlignedWriter {
@@ -105,20 +91,14 @@ impl<R: Read> ReadContext<R> {
 }
 
 impl<R: Read> Reader for ReadContext<R> {
-    fn read_boxed<T: tl::Type>(&mut self) -> tl::Result<T> {
-        let con_id = ConstructorId(try!(self.read_u32::<LittleEndian>()));
-        T::deserialize_boxed(con_id, self)
-    }
-
-    fn read_bare<T: tl::Type>(&mut self) -> tl::Result<T> {
-        assert!(T::bare_type());
+    fn read_tl<T: tl::ReadType>(&mut self) -> tl::Result<T> {
         T::deserialize(self)
     }
 
     fn read_polymorphic(&mut self) -> tl::Result<Box<TLObject>> {
-        let id: ConstructorId = self.read_bare()?;
-        let ctor = self.ctors.as_ref().map(|m| m.get(&id).0).unwrap();
-        ctor(id, self)
+        let id = self.read_type_id()?;
+        let ctor = self.ctors.as_ref().unwrap().get(&id).0;
+        ctor(Some(id), self)
     }
 }
 
@@ -129,12 +109,8 @@ impl<R: Read> Read for ReadContext<R> {
 }
 
 impl<'a, R: ?Sized + Reader> Reader for AlignedReader<'a, R> {
-    fn read_boxed<T: tl::Type>(&mut self) -> tl::Result<T> {
-        self.reader.read_boxed()
-    }
-
-    fn read_bare<T: tl::Type>(&mut self) -> tl::Result<T> {
-        self.reader.read_bare()
+    fn read_tl<T: tl::ReadType>(&mut self) -> tl::Result<T> {
+        self.reader.read_tl()
     }
 
     fn read_polymorphic(&mut self) -> tl::Result<Box<TLObject>> {
@@ -163,12 +139,8 @@ impl<'a, R: ?Sized + Reader> Drop for AlignedReader<'a, R> {
 }
 
 impl<'a, R: ?Sized + Reader> Reader for TakeReader<'a, R> {
-    fn read_boxed<T: tl::Type>(&mut self) -> tl::Result<T> {
-        self.reader.read_boxed()
-    }
-
-    fn read_bare<T: tl::Type>(&mut self) -> tl::Result<T> {
-        self.reader.read_bare()
+    fn read_tl<T: tl::ReadType>(&mut self) -> tl::Result<T> {
+        self.reader.read_tl()
     }
 
     fn read_polymorphic(&mut self) -> tl::Result<Box<TLObject>> {
@@ -198,14 +170,10 @@ impl<W: Write> WriteContext<W> {
 }
 
 impl<W: Write> Writer for WriteContext<W> {
-    fn write_boxed<T: tl::Type>(&mut self, value: &T) -> tl::Result<()> {
-        let con_id = value.type_id().unwrap();
-        try!(self.write_u32::<LittleEndian>(con_id.0));
-        value.serialize(self)
-    }
-
-    fn write_bare<T: tl::Type>(&mut self, value: &T) -> tl::Result<()> {
-        assert!(T::bare_type());
+    fn write_tl<T: tl::WriteType>(&mut self, value: &T) -> tl::Result<()> {
+        if let Some(con_id) = value.type_id() {
+            self.write_u32::<LittleEndian>(con_id.0)?;
+        }
         value.serialize(self)
     }
 }
@@ -240,30 +208,5 @@ impl<'a, W: ?Sized + Writer> Drop for AlignedWriter<'a, W> {
             let pad = self.alignment - remainder;
             self.write_all(&buf[..pad]).expect("couldn't pad");
         }
-    }
-}
-
-impl tl::Type for ConstructorId {
-    fn bare_type() -> bool {
-        true
-    }
-
-    fn type_id(&self) -> Option<ConstructorId> {
-        None
-    }
-
-    fn serialize<W: Writer>(&self, writer: &mut W) -> tl::Result<()> {
-        use byteorder::{LittleEndian, WriteBytesExt};
-        try!(writer.write_u32::<LittleEndian>(self.0));
-        Ok(())
-    }
-
-    fn deserialize<R: Reader>(reader: &mut R) -> tl::Result<Self> {
-        use byteorder::{LittleEndian, ReadBytesExt};
-        Ok(ConstructorId(try!(reader.read_u32::<LittleEndian>())))
-    }
-
-    fn deserialize_boxed<R: Reader>(_: ConstructorId, _: &mut R) -> tl::Result<Self> {
-        Err(::error::ErrorKind::PrimitiveAsPolymorphic.into())
     }
 }

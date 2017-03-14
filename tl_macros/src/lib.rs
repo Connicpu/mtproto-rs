@@ -8,77 +8,54 @@ use proc_macro::TokenStream;
 use std::iter;
 
 struct Impls {
-    bare_type: quote::Tokens,
     type_id: quote::Tokens,
-    serialize: quote::Tokens,
-    deserialize: quote::Tokens,
-    deserialize_boxed: quote::Tokens,
+    deserialize_bare: quote::Tokens,
+    deserialize_as_bare: bool,
     extra_items: Vec<quote::Tokens>,
-}
-
-fn add_any_bounds(generics: &syn::Generics) -> syn::Generics {
-    let mut ret = generics.clone();
-    for ty in &mut ret.ty_params {
-        ty.bounds.push(syn::TyParamBound::Trait(
-            syn::PolyTraitRef {
-                bound_lifetimes: vec![],
-                trait_ref: syn::parse_path(&quote! { ::std::any::Any }.to_string()).unwrap(),
-            },
-            syn::TraitBoundModifier::None
-        ));
-    }
-    ret
 }
 
 #[proc_macro_derive(TLType, attributes(tl_id))]
 pub fn expand_tltype(input: TokenStream) -> TokenStream {
     let ast = syn::parse_macro_input(&input.to_string()).unwrap();
     let ident = &ast.ident;
-    let generics = add_any_bounds(&ast.generics);
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let Impls {
-        bare_type, type_id, serialize, deserialize, deserialize_boxed, extra_items,
+        type_id, deserialize_bare, deserialize_as_bare, extra_items,
     } = match &ast.body {
         &syn::Body::Struct(ref body) => {
-            impl_item_struct(extract_tl_id(&ast.attrs), &ident, &generics, body)
+            impl_item_struct(extract_tl_id(&ast.attrs), &ident, body)
         },
         &syn::Body::Enum(ref variants) => impl_item_enum(&ident, variants),
+    };
+
+    let deserialize_as_bare = if deserialize_as_bare {
+        quote! {
+            fn deserialize<R: ::tl::parsing::Reader>(reader: &mut R) -> ::tl::Result<Self> {
+                Self::deserialize_bare(None, reader)
+            }
+        }
+    } else {
+        quote!()
     };
 
     let ret = quote! {
 
         #(#extra_items)*
 
-        impl #impl_generics ::tl::Type for #ident #ty_generics #where_clause {
-            #[inline]
-            fn bare_type() -> bool {
-                #bare_type
-            }
-
-            #[inline]
+        impl ::tl::IdentifiableType for #ident {
             fn type_id(&self) -> Option<::tl::parsing::ConstructorId> {
                 #type_id
             }
+        }
 
-            fn serialize<W: ::tl::parsing::Writer>(
-                &self,
-                _writer: &mut W
-            ) -> ::tl::Result<()> {
-                #serialize
-            }
-
-            fn deserialize<R: ::tl::parsing::Reader>(
+        impl ::tl::ReadType for #ident {
+            fn deserialize_bare<R: ::tl::parsing::Reader>(
+                _id: Option<::tl::parsing::ConstructorId>,
                 _reader: &mut R
             ) -> ::tl::Result<Self> {
-                #deserialize
+                #deserialize_bare
             }
 
-            fn deserialize_boxed<R: ::tl::parsing::Reader>(
-                _id: ::tl::parsing::ConstructorId,
-                _reader: &mut R
-            ) -> ::tl::Result<Self> {
-                #deserialize_boxed
-            }
+            #deserialize_as_bare
         }
 
     };
@@ -116,7 +93,7 @@ fn empty_variant(variant: &syn::VariantData) -> quote::Tokens {
 }
 
 fn deserialize_variant(variant: &syn::VariantData) -> quote::Tokens {
-    let read_generic = iter::repeat(quote! { _reader.read_generic()? });
+    let read_generic = iter::repeat(quote! { _reader.read_tl()? });
     match variant {
         &syn::VariantData::Unit => quote! {},
         &syn::VariantData::Tuple(ref fields_vec) => {
@@ -134,109 +111,36 @@ fn deserialize_variant(variant: &syn::VariantData) -> quote::Tokens {
     }
 }
 
-fn ty_turbofish(ty: &syn::Ident, ty_generics: &syn::TyGenerics) -> quote::Tokens {
-    let tokens = quote! { #ty_generics };
-    if tokens.as_str().is_empty() {
-        quote! { #ty }
-    } else {
-        quote! { #ty :: #tokens }
-    }
-}
-
-fn impl_item_struct(tl_id_opt: Option<u32>, ty: &syn::Ident, generics: &syn::Generics, body: &syn::VariantData) -> Impls {
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let ty_turbofish = ty_turbofish(ty, &ty_generics);
-
-    let serialize = match body {
-        &syn::VariantData::Unit => quote! {},
-        &syn::VariantData::Tuple(ref fields_vec) => {
-            let fields = (0..fields_vec.len()).map(Into::<syn::Ident>::into);
-            quote! { #(
-                _writer.write_generic(&self.#fields)?;
-            )* }
-        },
-        &syn::VariantData::Struct(ref fields_vec) => {
-            let fields = fields_vec.into_iter().map(|f| f.ident.as_ref().unwrap());
-            quote! { #(
-                _writer.write_generic(&self.#fields)?;
-            )* }
-        },
-    };
-    let serialize = quote! {
-        { #serialize }
-        Ok(())
-    };
-
+fn impl_item_struct(tl_id_opt: Option<u32>, ty: &syn::Ident, body: &syn::VariantData) -> Impls {
     let deserialize_body = deserialize_variant(body);
-    let deserialize = quote! { Ok(#ty #deserialize_body) };
-
     if let Some(tl_id) = tl_id_opt {
-        let type_id = quote! {
-            #ty_turbofish::TYPE_ID
-        };
+        let type_id = quote!(#ty::TYPE_ID);
         let extra_items = vec![quote! {
 
-            impl #impl_generics #ty #ty_generics #where_clause {
+            impl #ty {
                 const TYPE_ID: ::tl::parsing::ConstructorId = ::tl::parsing::ConstructorId(#tl_id);
             }
 
         }];
-        let deserialize_boxed = quote! {
-            if _id == #type_id {
-                Self::deserialize(_reader)
-            } else {
-                Err(::error::ErrorKind::InvalidType(_id).into())
-            }
-        };
         Impls {
-            bare_type: quote! { false },
             type_id: quote! { Some(#type_id) },
-            serialize: serialize,
-            deserialize: deserialize,
-            deserialize_boxed: deserialize_boxed,
+            deserialize_bare: quote!(match _id {
+                Some(#type_id) | None => Ok(#ty #deserialize_body),
+                id => Err(::error::ErrorKind::InvalidType(vec![#type_id], id).into()),
+            }),
+            deserialize_as_bare: false,
             extra_items: extra_items,
         }
     } else {
         Impls {
-            bare_type: quote! { true },
             type_id: quote! { None },
-            serialize: serialize,
-            deserialize: deserialize,
-            deserialize_boxed: quote! { Err(::error::ErrorKind::PrimitiveAsPolymorphic.into()) },
+            deserialize_bare: quote!(match _id {
+                None => Ok(#ty #deserialize_body),
+                id => Err(::error::ErrorKind::InvalidType(vec![], id).into()),
+            }),
+            deserialize_as_bare: true,
             extra_items: vec![],
         }
-    }
-}
-
-fn serialize_enum_variant(ty: &syn::Ident, variant: &syn::Variant) -> quote::Tokens {
-    let name = &variant.ident;
-    match &variant.data {
-        &syn::VariantData::Unit => quote! {
-            &#ty::#name => (),
-        },
-        &syn::VariantData::Tuple(ref fields_vec) => {
-            let fields_vec: Vec<syn::Ident> = (0..fields_vec.len())
-                .map(|i| format!("t{}", i).into())
-                .collect();
-            let fields = &fields_vec;
-            quote! {
-                &#ty::#name( #( ref #fields ),* ) => {
-                    #( _writer.write_generic(#fields)?; )*
-                },
-            }
-        },
-        &syn::VariantData::Struct(ref fields_vec) => {
-            let fields_vec: Vec<&syn::Ident> = fields_vec
-                .into_iter()
-                .map(|f| f.ident.as_ref().unwrap())
-                .collect();
-            let fields = &fields_vec;
-            quote! {
-                &#ty::#name { #( ref #fields ),* } => {
-                    #( _writer.write_generic(#fields)?; )*
-                },
-            }
-        },
     }
 }
 
@@ -247,14 +151,14 @@ fn impl_item_enum(ty: &syn::Ident, variants: &[syn::Variant]) -> Impls {
             quote! { #ty::#name }
         })
         .collect();
-    let tl_ids: Vec<_> = variants.iter()
+    let tl_ids_: Vec<_> = variants.iter()
         .map(|v| extract_tl_id(&v.attrs).unwrap())
         .collect();
+    let tl_ids = &tl_ids_;
     let empty_variants = variants.iter()
         .map(|v| empty_variant(&v.data));
     let type_id = {
         let variant_names = &variant_names;
-        let tl_ids = &tl_ids;
         quote! {
             match self {
                 #( &#variant_names #empty_variants => Some(::tl::parsing::ConstructorId(#tl_ids)), )*
@@ -262,40 +166,23 @@ fn impl_item_enum(ty: &syn::Ident, variants: &[syn::Variant]) -> Impls {
         }
     };
 
-    let serialize = {
-        let serialize_arm = variants.iter()
-            .map(|v| serialize_enum_variant(ty, v));
-        quote! {
-            match self {
-                #( #serialize_arm )*
-            }
-            Ok(())
-        }
-    };
-
-    let deserialize = quote! {
-        Err(::error::ErrorKind::BoxedAsBare.into())
-    };
-
     let deserialize_fields = variants.iter()
         .map(|v| deserialize_variant(&v.data));
-    let deserialize_boxed = {
+    let deserialize = {
         let variant_names = &variant_names;
         let tl_ids = &tl_ids;
         quote! {
-            match _id.0 {
-                #( #tl_ids => Ok(#variant_names #deserialize_fields), )*
-                id => Err(::error::ErrorKind::InvalidType(::tl::parsing::ConstructorId(id)).into()),
+            match _id {
+                #( Some(#tl_ids) => Ok(#variant_names #deserialize_fields), )*
+                id => Err(::error::ErrorKind::InvalidType(vec![#( #tl_ids ),*], id).into()),
             }
         }
     };
 
     Impls {
-        bare_type: quote! { false },
         type_id: type_id,
-        serialize: serialize,
-        deserialize: deserialize,
-        deserialize_boxed: deserialize_boxed,
+        deserialize_bare: deserialize,
+        deserialize_as_bare: false,
         extra_items: vec![],
     }
 }

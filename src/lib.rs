@@ -19,8 +19,7 @@ pub mod error {
 
         errors {
             InvalidData {}
-            InvalidType(tl_id: ::tl::parsing::ConstructorId) {}
-            PrimitiveAsPolymorphic {}
+            InvalidType(expected: Vec<::tl::parsing::ConstructorId>, received: Option<::tl::parsing::ConstructorId>) {}
             BoxedAsBare {}
             ReceivedSendType {}
             UnsupportedLayer {}
@@ -28,6 +27,7 @@ pub mod error {
             InvalidLength {}
             Unknown {}
             FactorizationFailure {}
+            AuthenticationFailure {}
         }
     }
 }

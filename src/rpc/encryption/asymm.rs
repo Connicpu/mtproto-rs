@@ -56,8 +56,8 @@ impl RsaPublicKey {
         {
             use tl::parsing::Writer;
             let mut writer = ::tl::parsing::WriteContext::new(&mut buf);
-            writer.write_bare(&self.0.n().unwrap().to_vec()).unwrap();
-            writer.write_bare(&self.0.e().unwrap().to_vec()).unwrap();
+            writer.write_tl(&self.0.n().unwrap().to_vec())?;
+            writer.write_tl(&self.0.e().unwrap().to_vec())?;
         }
         let mut hasher = hash::Hasher::new(hash::MessageDigest::sha1())?;
         hasher.update(&buf.into_inner())?;

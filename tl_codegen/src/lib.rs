@@ -237,8 +237,6 @@ fn filter_items(iv: &mut Vec<Item>) {
         };
         // Blacklist some annoying inconsistencies.
         match c.variant.name() {
-            Some("boolTrue") |
-            Some("boolFalse") |
             Some("true") |
             Some("vector") => false,
             Some("future_salt") |
@@ -590,13 +588,13 @@ impl Constructor {
         quote! { <#(#tys: #traits),*> }
     }
 
-    fn type_generics(&self) -> quote::Tokens {
+    fn type_generics(&self, trait_: &quote::Tokens) -> quote::Tokens {
         if self.type_parameters.is_empty() {
             return quote!();
         }
         let tys = self.type_parameters.iter()
             .map(|f| no_conflict_ident(f.name.as_ref().unwrap()));
-        let traits = std::iter::repeat(quote!(::tl::Type));
+        let traits = std::iter::repeat(trait_);
         quote! { <#(#tys: #traits),*> }
     }
 
@@ -655,16 +653,16 @@ impl Constructor {
                             if #flag_field & (1 << #bit) == 0 {
                                 None
                             } else {
-                                Some(_reader.read_generic()?)
+                                Some(_reader.read_tl()?)
                             }
                         }
                     } else {
-                        quote!(_reader.read_generic()?)
+                        quote!(_reader.read_tl()?)
                     };
                     if !flags_to_read.is_empty() {
                         let flags = mem::replace(&mut flags_to_read, vec![]);
                         expr = quote!({
-                            #( #flags = _reader.read_generic()?; )*
+                            #( #flags = _reader.read_tl()?; )*
                             #expr
                         })
                     }
@@ -688,17 +686,13 @@ impl Constructor {
             &name,
             quote!(Some(#tl_id)),
             quote!(#serialize_destructure #serialize_stmts Ok(())),
-            quote!(Ok({
-                #( let #flag_fields: i32; )*
-                #name #deserialize
-            })),
-            quote! {
-                if _id == #tl_id {
-                    Self::deserialize(_reader)
-                } else {
-                    Err(::error::ErrorKind::InvalidType(_id).into())
-                }
-            });
+            Some(quote!(match _id {
+                Some(#tl_id) | None => Ok({
+                    #( let #flag_fields: i32; )*
+                    #name #deserialize
+                }),
+                id => Err(::error::ErrorKind::InvalidType(vec![#tl_id], id).into()),
+            })));
         let struct_block = self.as_struct_base(&name);
         quote! {
             #struct_block
@@ -731,15 +725,15 @@ impl Constructor {
             .map(|f| {
                 let name = no_conflict_ident(f.name.as_ref().unwrap());
                 if flag_fields.contains(&name) {
-                    quote! { _writer.write_generic(&#name)?; }
+                    quote! { _writer.write_tl(&#name)?; }
                 } else if f.ty.flag_field().is_some() {
                     quote! {
                         if let &Some(ref inner) = #name {
-                            _writer.write_generic(inner)?;
+                            _writer.write_tl(inner)?;
                         }
                     }
                 } else {
-                    quote! { _writer.write_generic(#name)?; }
+                    quote! { _writer.write_tl(#name)?; }
                 }
             });
         quote! {
@@ -766,8 +760,7 @@ impl Constructor {
             &name,
             quote!(Some(#tl_id)),
             quote!(#serialize_destructure #serialize_stmts Ok(())),
-            quote!(Err(::error::ErrorKind::ReceivedSendType.into())),
-            quote!(Err(::error::ErrorKind::ReceivedSendType.into())));
+            None);
         quote! {
             #struct_block
             impl #rpc_generics ::rpc::RpcFunction for #name #generics {
@@ -788,42 +781,42 @@ impl Constructor {
         quote! { ::tl::parsing::ConstructorId(#tl_id) }
     }
 
-    fn as_type_impl(&self, name: &syn::Ident, type_id: quote::Tokens, serialize: quote::Tokens, deserialize: quote::Tokens, deserialize_boxed: quote::Tokens) -> quote::Tokens {
-        let type_generics = self.type_generics();
+    fn as_type_impl(&self, name: &syn::Ident, type_id: quote::Tokens, serialize: quote::Tokens, deserialize: Option<quote::Tokens>) -> quote::Tokens {
+        let write_generics = self.type_generics(&quote!(::tl::WriteType));
         let generics = self.generics();
+
+        let deserialize = deserialize.map(|body| {
+            let read_generics = self.type_generics(&quote!(::tl::ReadType));
+            quote! {
+                impl #read_generics ::tl::ReadType for #name #generics {
+                    fn deserialize_bare<R: ::tl::parsing::Reader>(
+                        _id: Option<::tl::parsing::ConstructorId>,
+                        _reader: &mut R
+                    ) -> ::tl::Result<Self> {
+                        #body
+                    }
+                }
+            }
+        }).unwrap_or_else(|| quote!());
+
         quote! {
 
-            impl #type_generics ::tl::Type for #name #generics {
-                #[inline]
-                fn bare_type() -> bool {
-                    false
-                }
-
-                #[inline]
+            impl #generics ::tl::IdentifiableType for #name #generics {
                 fn type_id(&self) -> Option<::tl::parsing::ConstructorId> {
                     #type_id
                 }
+            }
 
+            impl #write_generics ::tl::WriteType for #name #generics {
                 fn serialize<W: ::tl::parsing::Writer>(
                     &self,
                     _writer: &mut W
                 ) -> ::tl::Result<()> {
                     #serialize
                 }
-
-                fn deserialize<R: ::tl::parsing::Reader>(
-                    _reader: &mut R
-                ) -> ::tl::Result<Self> {
-                    #deserialize
-                }
-
-                fn deserialize_boxed<R: ::tl::parsing::Reader>(
-                    _id: ::tl::parsing::ConstructorId,
-                    _reader: &mut R
-                ) -> ::tl::Result<Self> {
-                    #deserialize_boxed
-                }
             }
+
+            #deserialize
         }
     }
 }
@@ -908,38 +901,30 @@ impl Constructors {
         }
     }
 
-    fn as_type_impl(&self, name: &syn::Ident, type_id: quote::Tokens, serialize: quote::Tokens, deserialize: quote::Tokens, deserialize_boxed: quote::Tokens) -> quote::Tokens {
+    fn as_type_impl(&self, name: &syn::Ident, type_id: quote::Tokens, serialize: quote::Tokens, deserialize: quote::Tokens) -> quote::Tokens {
         quote! {
 
-            impl ::tl::Type for #name {
-                #[inline]
-                fn bare_type() -> bool {
-                    false
-                }
-
-                #[inline]
+            impl ::tl::IdentifiableType for #name {
                 fn type_id(&self) -> Option<::tl::parsing::ConstructorId> {
                     #type_id
                 }
+            }
 
+            impl ::tl::WriteType for #name {
                 fn serialize<W: ::tl::parsing::Writer>(
                     &self,
                     _writer: &mut W
                 ) -> ::tl::Result<()> {
                     #serialize
                 }
+            }
 
-                fn deserialize<R: ::tl::parsing::Reader>(
+            impl ::tl::ReadType for #name {
+                fn deserialize_bare<R: ::tl::parsing::Reader>(
+                    _id: Option<::tl::parsing::ConstructorId>,
                     _reader: &mut R
                 ) -> ::tl::Result<Self> {
                     #deserialize
-                }
-
-                fn deserialize_boxed<R: ::tl::parsing::Reader>(
-                    _id: ::tl::parsing::ConstructorId,
-                    _reader: &mut R
-                ) -> ::tl::Result<Self> {
-                    #deserialize_boxed
                 }
             }
         }
@@ -977,12 +962,14 @@ impl Constructors {
     }
 
     fn as_deserialize_match(&self, enum_name: &syn::Ident) -> quote::Tokens {
+        let tl_ids = self.0.iter()
+            .map(|c| c.tl_id());
         let constructors = self.0.iter()
             .map(|c| {
                 let variant_name = c.variant_name();
                 let tl_id = c.tl_id();
                 let (flag_fields, deserialize) = c.as_struct_deserialize();
-                quote!(#tl_id => {
+                quote!(Some(#tl_id) => {
                     #( let #flag_fields: i32; )*
                     Ok(#enum_name :: #variant_name #deserialize)
                 })
@@ -990,7 +977,7 @@ impl Constructors {
         quote! {
             match _id {
                 #( #constructors, )*
-                _ => Err(::error::ErrorKind::InvalidType(_id).into()),
+                id => Err(::error::ErrorKind::InvalidType(vec![#( #tl_ids ),*], id).into()),
             }
         }
     }
@@ -1008,7 +995,6 @@ impl Constructors {
             &name,
             self.as_type_id_match(&name),
             self.as_serialize_match(&name),
-            quote!(Err(::error::ErrorKind::BoxedAsBare.into())),
             self.as_deserialize_match(&name));
 
         quote! {
@@ -1021,13 +1007,13 @@ impl Constructors {
         }
     }
 
-    fn as_dynamic_ctors(&self) -> Vec<(Option<Vec<String>>, quote::Tokens)> {
+    fn as_dynamic_ctors(&self) -> Vec<(Option<Vec<String>>, u32, quote::Tokens)> {
         let ty = self.0[0].output.as_type().unboxed();
         let ty_name = self.0[0].output.names_vec();
         self.0.iter()
             .map(|c| {
                 let tl_id = c.tl_id();
-                (ty_name.cloned(), quote!(cstore.add::<#ty>(#tl_id)))
+                (ty_name.cloned(), c.tl_id, quote!(cstore.add::<#ty>(#tl_id)))
             })
             .collect()
     }
@@ -1045,7 +1031,7 @@ pub fn generate_code_for(input: &str) -> String {
         pub use manual_types::*;
     }];
 
-    let mut dynamic_ctors = BTreeMap::new();
+    let mut dynamic_ctors = vec![];
     for (ns, mut constructor_map) in constructors.types {
         dynamic_ctors.extend(
             constructor_map.values().flat_map(Constructors::as_dynamic_ctors));
@@ -1067,17 +1053,19 @@ pub fn generate_code_for(input: &str) -> String {
         }
     }
 
-    let ctors = dynamic_ctors.values();
+    dynamic_ctors.sort_by(|t1, t2| (&t1.0, t1.1).cmp(&(&t2.0, t2.1)));
+    let dynamic_ctors = dynamic_ctors.into_iter()
+        .map(|t| t.2);
     items.push(quote! {
         pub fn register_ctors<R: ::tl::parsing::Reader>(cstore: &mut ::tl::dynamic::TLCtorMap<R>) {
             register_manual_ctors(cstore);
-            #( #ctors; )*
+            #( #dynamic_ctors; )*
         }
     });
 
     let mut rpc_items = vec![];
     for (ns, mut substructs) in constructors.functions {
-        substructs.sort_by_key(|c| c.variant.clone());
+        substructs.sort_by(|c1, c2| c1.variant.cmp(&c2.variant));
         let substructs = substructs.into_iter()
             .map(|mut c| {
                 c.fixup(Delimiter::Functions);
