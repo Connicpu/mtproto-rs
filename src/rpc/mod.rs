@@ -1,13 +1,15 @@
-use std::{cmp, io};
+use std::{cmp, io, mem};
 
 use chrono::{DateTime, Duration, UTC, Timelike, TimeZone};
-use byteorder::{LittleEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
+use byteorder::{LittleEndian, ByteOrder, ReadBytesExt};
 use openssl::hash;
 
 pub mod encryption;
 
 use error::Result;
 use schema::{FutureSalt, Int128};
+use tl::dynamic::TLObject;
+use tl::{Bare, WriteType, serialize_message};
 
 #[derive(Debug, Clone)]
 pub struct AppId {
@@ -38,6 +40,7 @@ pub struct Session {
     server_salts: Vec<Salt>,
     seq_no: i32,
     auth_key: Option<encryption::AuthKey>,
+    to_ack: Vec<i64>,
     pub app_id: AppId,
 }
 
@@ -52,6 +55,7 @@ pub struct InboundPayload {
     pub message_id: i64,
     pub payload: Vec<u8>,
     pub was_encrypted: bool,
+    pub seq_no: Option<i32>,
 }
 
 pub type InboundMessage = ::std::result::Result<InboundPayload, i32>;
@@ -63,14 +67,23 @@ impl Session {
             server_salts: vec![],
             seq_no: 0,
             auth_key: None,
+            to_ack: vec![],
             app_id: app_id,
         }
     }
 
     fn next_content_seq_no(&mut self) -> i32 {
-        let seq = self.seq_no * 2;
-        self.seq_no += 1;
-        seq
+        let ret = self.seq_no | 1;
+        self.seq_no += 2;
+        ret
+    }
+
+    fn next_seq_no(&mut self, content_message: bool) -> i32 {
+        if content_message {
+            self.next_content_seq_no()
+        } else {
+            self.seq_no
+        }
     }
 
     fn latest_server_salt(&mut self) -> i64 {
@@ -103,6 +116,10 @@ impl Session {
         self.auth_key = Some(authorization_key);
     }
 
+    pub fn ack_id(&mut self, id: i64) {
+        self.to_ack.push(id);
+    }
+
     fn next_message_id(&mut self) -> i64 {
         let time = UTC::now();
         let timestamp = time.timestamp() as i64;
@@ -110,46 +127,85 @@ impl Session {
         (timestamp << 32) | (nano & !3)
     }
 
-    pub fn encrypted_payload(&mut self, payload: &[u8]) -> Result<OutboundMessage> {
-        let key = self.auth_key.clone().unwrap();
-        let mut ret = OutboundMessage {
-            message_id: self.next_message_id(),
-            message: vec![],
-        };
-        {
-            let message = &mut ret.message;
-            let salt = self.latest_server_salt();
-            message.write_i64::<LittleEndian>(salt).unwrap();
-            message.write_i64::<LittleEndian>(self.session_id).unwrap();
-            message.write_i64::<LittleEndian>(ret.message_id).unwrap();
-            message.write_i32::<LittleEndian>(self.next_content_seq_no() | 1).unwrap();
-            message.write_i32::<LittleEndian>(payload.len() as i32).unwrap();
-            message.extend(payload);
+    fn pack_message_container<I>(&mut self, payloads: I) -> ::schema::manual::MessageContainer
+        where I: IntoIterator<Item = (bool, Box<TLObject>)>,
+    {
+        let messages: Vec<_> = payloads.into_iter()
+            .map(|(content_message, payload)| {
+                ::schema::manual::Message {
+                    msg_id: self.next_message_id(),
+                    seqno: self.next_seq_no(content_message),
+                    body: payload.into(),
+                }
+            })
+            .collect();
+        ::schema::manual::MessageContainer {
+            messages: Bare(messages),
         }
-        ret.message = key.encrypt_message(&ret.message)?;
+    }
+
+    fn encrypted_payload_inner(&mut self, payload: Box<TLObject>, content_message: bool) -> Result<OutboundMessage> {
+        let key = self.auth_key.clone().unwrap();
+        let message_id = self.next_message_id();
+        let message = serialize_message(::schema::manual::Encrypted {
+            salt: self.latest_server_salt(),
+            session_id: self.session_id,
+            message_id: message_id,
+            seq_no: self.next_seq_no(content_message),
+            payload: payload.into(),
+        })?;
+        println!("encrypting: {:?}", message);
+        Ok(OutboundMessage {
+            message_id: message_id,
+            message: key.encrypt_message(&message)?,
+        })
+    }
+
+    fn pack_encrypted_payload_with_acks(&mut self, payload: Box<TLObject>) -> Result<OutboundMessage> {
+        let acks = Box::new(::schema::MsgsAck {
+            msg_ids: mem::replace(&mut self.to_ack, vec![]),
+        }) as Box<TLObject>;
+        let combined = self.pack_message_container(vec![(false, acks), (true, payload)]);
+        // The message id of the interior message which was 'payload'.
+        let message_id = combined.messages.0[1].msg_id;
+        let mut ret = self.encrypted_payload_inner(Box::new(combined), false)?;
+        ret.message_id = message_id;
         Ok(ret)
     }
 
-    pub fn plain_payload(&mut self, payload: &[u8]) -> OutboundMessage {
-        let mut ret = OutboundMessage {
-            message_id: self.next_message_id(),
-            message: vec![],
-        };
-        {
-            let message = &mut ret.message;
-            message.write_i64::<LittleEndian>(0).unwrap();
-            message.write_i64::<LittleEndian>(ret.message_id).unwrap();
-            message.write_i32::<LittleEndian>(payload.len() as i32).unwrap();
-            message.extend(payload);
+    pub fn encrypted_payload<P>(&mut self, payload: P) -> Result<OutboundMessage>
+        where P: WriteType + 'static,
+    {
+        let payload = Box::new(payload);
+        if self.to_ack.is_empty() {
+            self.encrypted_payload_inner(payload, true)
+        } else {
+            self.pack_encrypted_payload_with_acks(payload)
         }
-        ret
     }
 
-    pub fn assemble_payload(&mut self, payload: &[u8], encrypt: bool) -> Result<OutboundMessage> {
+    pub fn plain_payload<P>(&mut self, payload: P) -> Result<OutboundMessage>
+        where P: WriteType + 'static,
+    {
+        let message_id = self.next_message_id();
+        let message = serialize_message(::schema::manual::Plain {
+            auth_key_id: 0,
+            message_id: message_id,
+            payload: (Box::new(payload) as Box<TLObject>).into(),
+        })?;
+        Ok(OutboundMessage {
+            message_id: message_id,
+            message: message,
+        })
+    }
+
+    pub fn assemble_payload<P>(&mut self, payload: P, encrypt: bool) -> Result<OutboundMessage>
+        where P: WriteType + 'static,
+    {
         if encrypt {
             self.encrypted_payload(payload)
         } else {
-            Ok(self.plain_payload(payload))
+            self.plain_payload(payload)
         }
     }
 
@@ -176,6 +232,7 @@ impl Session {
             message_id: message_id,
             payload: payload.into(),
             was_encrypted: false,
+            seq_no: None,
         }))
     }
 
@@ -202,6 +259,7 @@ impl Session {
             message_id: message_id,
             payload: payload.into(),
             was_encrypted: true,
+            seq_no: Some(seq_no),
         }))
     }
 }

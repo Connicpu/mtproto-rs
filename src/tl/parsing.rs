@@ -40,9 +40,11 @@ pub trait Reader: Read {
 }
 
 pub trait Writer: Write {
-    fn write_tl<T: tl::WriteType>(&mut self, value: &T) -> tl::Result<()>;
+    fn write_tl(&mut self, value: &tl::WriteType) -> tl::Result<()>;
 
-    fn aligned<'a>(&'a mut self, alignment: usize) -> AlignedWriter<'a, Self> {
+    fn aligned(self, alignment: usize) -> AlignedWriter<Self>
+        where Self: Sized
+    {
         AlignedWriter {
             writer: self,
             alignment: alignment,
@@ -71,8 +73,8 @@ pub struct WriteContext<W: Write> {
     stream: W,
 }
 
-pub struct AlignedWriter<'a, W: 'a + ?Sized + Writer> {
-    writer: &'a mut W,
+pub struct AlignedWriter<W: Writer>{
+    writer: W,
     alignment: usize,
     position: usize,
 }
@@ -170,7 +172,7 @@ impl<W: Write> WriteContext<W> {
 }
 
 impl<W: Write> Writer for WriteContext<W> {
-    fn write_tl<T: tl::WriteType>(&mut self, value: &T) -> tl::Result<()> {
+    fn write_tl(&mut self, value: &tl::WriteType) -> tl::Result<()> {
         if let Some(con_id) = value.type_id() {
             self.write_u32::<LittleEndian>(con_id.0)?;
         }
@@ -188,7 +190,13 @@ impl<W: Write> Write for WriteContext<W> {
     }
 }
 
-impl<'a, W: ?Sized + Writer> Write for AlignedWriter<'a, W> {
+impl<'a> Writer for &'a mut Writer {
+    fn write_tl(&mut self, value: &tl::WriteType) -> tl::Result<()> {
+        (*self).write_tl(value)
+    }
+}
+
+impl<W: Writer> Write for AlignedWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let written = self.writer.write(buf)?;
         self.position += written;
@@ -200,7 +208,7 @@ impl<'a, W: ?Sized + Writer> Write for AlignedWriter<'a, W> {
     }
 }
 
-impl<'a, W: ?Sized + Writer> Drop for AlignedWriter<'a, W> {
+impl<W: Writer> Drop for AlignedWriter<W> {
     fn drop(&mut self) {
         let remainder = self.position % self.alignment;
         if remainder != 0 {

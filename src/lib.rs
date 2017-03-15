@@ -6,7 +6,6 @@ extern crate chrono;
 extern crate crc;
 #[macro_use] extern crate error_chain;
 extern crate openssl;
-#[macro_use] extern crate tl_macros;
 
 pub mod error {
     error_chain! {

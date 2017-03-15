@@ -11,8 +11,5 @@ crc = "1.2"
 error-chain = "0.10"
 openssl = "0.9.7"
 
-[dependencies.tl_macros]
-path = "tl_macros"
-
 [dev-dependencies]
 rand = "0.3"

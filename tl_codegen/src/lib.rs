@@ -74,7 +74,7 @@ pub mod parser {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
     pub struct Constructor {
         pub variant: Type,
-        pub tl_id: u32,
+        pub tl_id: Option<u32>,
         pub type_parameters: Vec<Field>,
         pub fields: Vec<Field>,
         pub output: Type,
@@ -173,7 +173,7 @@ pub mod parser {
     }
 
     fn constructor() -> Parser<u8, Constructor> {
-        (dotted_ident() + tl_id() + fields() - seq(b" = ") + ty_space_generic() - sym(b';'))
+        (dotted_ident() + tl_id().opt() + fields() - seq(b" = ") + ty_space_generic() - sym(b';'))
             .map(|(((variant, tl_id), (type_parameters, fields)), output)| Constructor {
                 variant: Type::Named(variant),
                 tl_id: tl_id,
@@ -303,6 +303,13 @@ fn wrap_option_value(wrap: bool, ty: quote::Tokens) -> quote::Tokens {
         quote! { Some(#ty) }
     } else {
         ty
+    }
+}
+
+fn lift_option_value(value: &Option<quote::Tokens>) -> quote::Tokens {
+    match value {
+        &Some(ref t) => quote!(Some(#t)),
+        &None => quote!(None),
     }
 }
 
@@ -727,23 +734,29 @@ impl Constructor {
 
     fn as_struct(&self) -> quote::Tokens {
         let name = self.output.name().map(|n| no_conflict_ident(n)).unwrap();
-        let tl_id = self.tl_id();
+        let tl_id_ = self.tl_id();
+        let tl_id = &tl_id_;
         let serialize_destructure = self.as_variant_ref_destructure(&name)
             .map(|d| quote! { let &#d = self; })
             .unwrap_or_else(|| quote!());
         let serialize_stmts = self.as_variant_serialize();
+        let mut tl_id_pattern = lift_option_value(tl_id);
+        if tl_id.is_some() {
+            tl_id_pattern = quote!(#tl_id_pattern | None);
+        }
+        let tl_ids = tl_id.iter();
         let (flag_fields_, deserialize) = self.as_struct_deserialize();
         let flag_fields = &flag_fields_;
         let type_impl = self.as_type_impl(
             &name,
-            quote!(Some(#tl_id)),
+            lift_option_value(tl_id),
             quote!(#serialize_destructure #serialize_stmts Ok(())),
             Some(quote!(match _id {
-                Some(#tl_id) | None => Ok({
+                #tl_id_pattern => Ok({
                     #( let #flag_fields: i32; )*
                     #name #deserialize
                 }),
-                id => Err(::error::ErrorKind::InvalidType(vec![#tl_id], id).into()),
+                id => Err(::error::ErrorKind::InvalidType(vec![#( #tl_ids ),*], id).into()),
             })));
         let struct_block = self.as_struct_base(&name);
         quote! {
@@ -836,9 +849,11 @@ impl Constructor {
         quote! { #name #fields }
     }
 
-    fn tl_id(&self) -> quote::Tokens {
-        let tl_id: syn::Ident = format!("0x{:08x}", self.tl_id).into();
-        quote! { ::tl::parsing::ConstructorId(#tl_id) }
+    fn tl_id(&self) -> Option<quote::Tokens> {
+        self.tl_id.as_ref().map(|tl_id| {
+            let tl_id: syn::Ident = format!("0x{:08x}", tl_id).into();
+            quote!(::tl::parsing::ConstructorId(#tl_id))
+        })
     }
 
     fn as_type_impl(&self, name: &syn::Ident, type_id: quote::Tokens, serialize: quote::Tokens, deserialize: Option<quote::Tokens>) -> quote::Tokens {
@@ -868,9 +883,9 @@ impl Constructor {
             }
 
             impl #write_generics ::tl::WriteType for #name #generics {
-                fn serialize<W: ::tl::parsing::Writer>(
+                fn serialize(
                     &self,
-                    _writer: &mut W
+                    _writer: &mut ::tl::parsing::Writer
                 ) -> ::tl::Result<()> {
                     #serialize
                 }
@@ -973,9 +988,9 @@ impl Constructors {
             }
 
             impl ::tl::WriteType for #name {
-                fn serialize<W: ::tl::parsing::Writer>(
+                fn serialize(
                     &self,
-                    _writer: &mut W
+                    _writer: &mut ::tl::parsing::Writer
                 ) -> ::tl::Result<()> {
                     #serialize
                 }
@@ -1073,9 +1088,10 @@ impl Constructors {
         let ty = self.0[0].output.as_type().unboxed();
         let ty_name = self.0[0].output.names_vec();
         self.0.iter()
-            .map(|c| {
-                let tl_id = c.tl_id();
-                (ty_name.cloned(), c.tl_id, quote!(cstore.add::<#ty>(#tl_id)))
+            .filter_map(|c| {
+                c.tl_id().map(|tl_id| {
+                    (ty_name.cloned(), c.tl_id.unwrap(), quote!(cstore.add::<#ty>(#tl_id)))
+                })
             })
             .collect()
     }
@@ -1120,7 +1136,7 @@ pub fn generate_code_for(input: &str) -> String {
         .map(|t| t.2);
     items.push(quote! {
         pub fn register_ctors<R: ::tl::parsing::Reader>(cstore: &mut ::tl::dynamic::TLCtorMap<R>) {
-            register_manual_ctors(cstore);
+            cstore.add::<Vec<Object>>(::tl::VEC_TYPE_ID);
             #( #dynamic_ctors; )*
         }
     });

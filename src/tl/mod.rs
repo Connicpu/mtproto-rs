@@ -1,5 +1,5 @@
 use std;
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use tl::parsing::{ConstructorId, Reader, Writer};
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 use schema::Bool;
@@ -17,7 +17,7 @@ pub trait IdentifiableType {
 }
 
 pub trait WriteType: IdentifiableType {
-    fn serialize<W: Writer>(&self, writer: &mut W) -> Result<()>;
+    fn serialize(&self, writer: &mut Writer) -> Result<()>;
 }
 
 pub trait ReadType: Sized {
@@ -26,14 +26,6 @@ pub trait ReadType: Sized {
     fn deserialize<R: Reader>(reader: &mut R) -> Result<Self> {
         Self::deserialize_bare(Some(reader.read_type_id()?), reader)
     }
-}
-
-trait ReadHelpers {
-    fn align(&mut self, alignment: u8) -> Result<()>;
-}
-
-trait WriteHelpers {
-    fn pad(&mut self, alignment: u8) -> Result<()>;
 }
 
 fn ensure_type_id(expected: Option<ConstructorId>, actual: Option<ConstructorId>) -> Result<()> {
@@ -48,7 +40,7 @@ macro_rules! impl_tl_primitive {
     ($ptype:ident, $read:ident, $write:ident) => {
         impl IdentifiableType for $ptype {}
         impl WriteType for $ptype {
-            fn serialize<W: Writer>(&self, writer: &mut W) -> Result<()> {
+            fn serialize(&self, writer: &mut Writer) -> Result<()> {
                 use byteorder::{LittleEndian, WriteBytesExt};
                 writer.$write::<LittleEndian>(*self)?;
                 Ok(())
@@ -80,7 +72,7 @@ macro_rules! impl_tl_tuple {
     ($($i:ident : $t:ident),*) => {
         impl< $( $t : IdentifiableType ),* > IdentifiableType for ($($t),*) {}
         impl< $( $t : WriteType ),* > WriteType for ($($t),*) {
-            fn serialize<W: Writer>(&self, writer: &mut W) -> Result<()> {
+            fn serialize(&self, writer: &mut Writer) -> Result<()> {
                 let &($(ref $i),*) = self;
                 $( writer.write_tl($i)?; )*
                 Ok(())
@@ -111,7 +103,7 @@ impl<'a, T: IdentifiableType> IdentifiableType for &'a [T] {
 }
 
 impl<'a, T: WriteType> WriteType for &'a [T] {
-    fn serialize<W: Writer>(&self, writer: &mut W) -> Result<()> {
+    fn serialize(&self, writer: &mut Writer) -> Result<()> {
         assert!(self.len() <= std::u32::MAX as usize);
         writer.write_u32::<LittleEndian>(self.len() as u32)?;
         for item in *self {
@@ -128,7 +120,7 @@ impl<T: IdentifiableType> IdentifiableType for Vec<T> {
 }
 
 impl<T: WriteType> WriteType for Vec<T> {
-    fn serialize<W: Writer>(&self, writer: &mut W) -> Result<()> {
+    fn serialize(&self, writer: &mut Writer) -> Result<()> {
         (&self[..]).serialize(writer)
     }
 }
@@ -149,8 +141,8 @@ impl<T: ReadType> ReadType for Vec<T> {
 impl<'a> IdentifiableType for &'a [u8] {}
 
 impl<'a> WriteType for &'a [u8] {
-    fn serialize<W: Writer>(&self, writer_: &mut W) -> Result<()> {
-        let mut writer = writer_.aligned(4);
+    fn serialize(&self, writer: &mut Writer) -> Result<()> {
+        let mut writer = writer.aligned(4);
         let len = self.len();
         assert!(len & 0xFF000000 == 0); // len fits in a 24-bit integer
 
@@ -171,7 +163,7 @@ impl<'a> WriteType for &'a [u8] {
 impl IdentifiableType for Vec<u8> {}
 
 impl WriteType for Vec<u8> {
-    fn serialize<W: Writer>(&self, writer: &mut W) -> Result<()> {
+    fn serialize(&self, writer: &mut Writer) -> Result<()> {
         (&self[..]).serialize(writer)
     }
 }
@@ -203,7 +195,7 @@ impl ReadType for Vec<u8> {
 impl IdentifiableType for String {}
 
 impl WriteType for String {
-    fn serialize<W: Writer>(&self, writer: &mut W) -> Result<()> {
+    fn serialize(&self, writer: &mut Writer) -> Result<()> {
         self.as_bytes().serialize(writer)
     }
 }
@@ -227,7 +219,7 @@ impl<T: IdentifiableType> IdentifiableType for Box<T> {
 }
 
 impl<T: WriteType> WriteType for Box<T> {
-    fn serialize<W: Writer>(&self, writer: &mut W) -> Result<()> {
+    fn serialize(&self, writer: &mut Writer) -> Result<()> {
         T::serialize(&*self, writer)
     }
 }
@@ -241,7 +233,7 @@ impl<T: ReadType> ReadType for Box<T> {
 impl IdentifiableType for () {}
 
 impl WriteType for () {
-    fn serialize<W: Writer>(&self, _: &mut W) -> Result<()> {
+    fn serialize(&self, _: &mut Writer) -> Result<()> {
         Ok(())
     }
 }
@@ -279,7 +271,7 @@ impl IdentifiableType for bool {
 }
 
 impl WriteType for bool {
-    fn serialize<W: Writer>(&self, writer: &mut W) -> Result<()> {
+    fn serialize(&self, writer: &mut Writer) -> Result<()> {
         Into::<Bool>::into(*self).serialize(writer)
     }
 }
@@ -296,7 +288,7 @@ pub struct Bare<T>(pub T);
 impl<T> IdentifiableType for Bare<Vec<T>> {}
 
 impl<T: WriteType> WriteType for Bare<Vec<T>> {
-    fn serialize<W: Writer>(&self, writer: &mut W) -> Result<()> {
+    fn serialize(&self, writer: &mut Writer) -> Result<()> {
         writer.write_tl(&(self.0.len() as u32))?;
         for item in &self.0 {
             item.serialize(writer)?;
@@ -318,4 +310,12 @@ impl<T: ReadType> ReadType for Bare<Vec<T>> {
     fn deserialize<R: Reader>(reader: &mut R) -> Result<Self> {
         Self::deserialize_bare(None, reader)
     }
+}
+
+pub fn serialize_message<M>(msg: M) -> Result<Vec<u8>>
+    where M: WriteType,
+{
+    let mut buf = io::Cursor::new(Vec::<u8>::new());
+    parsing::WriteContext::new(&mut buf).write_tl(&msg)?;
+    Ok(buf.into_inner())
 }
