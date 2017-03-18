@@ -529,6 +529,7 @@ impl Constructor {
             self.fixup_output();
         }
         self.fixup_fields();
+        self.fixup_variant();
     }
 
     fn fixup_output(&mut self) {
@@ -569,6 +570,15 @@ impl Constructor {
                 _ => (),
             }
         }
+    }
+
+    fn fixup_variant(&mut self) {
+        match self.variant.name() {
+            // The 'updates' variant struct conflicts with the module.
+            Some("updates") => (),
+            _ => return,
+        }
+        self.variant = Type::Named(vec!["updates_".into()]);
     }
 
     fn flag_field_names(&self) -> HashSet<&str> {
@@ -613,12 +623,12 @@ impl Constructor {
         }
     }
 
-    fn as_empty_pattern(&self) -> quote::Tokens {
+    fn as_variant_empty_pattern(&self) -> quote::Tokens {
         let name = self.variant_name();
         if self.fields.is_empty() {
-            quote! { #name }
+            quote!(#name)
         } else {
-            quote! { #name {..} }
+            quote!(#name(..))
         }
     }
 
@@ -732,8 +742,7 @@ impl Constructor {
         (flag_fields, constructor)
     }
 
-    fn as_struct(&self) -> quote::Tokens {
-        let name = self.output.name().map(|n| no_conflict_ident(n)).unwrap();
+    fn as_type_struct_base(&self, name: syn::Ident) -> quote::Tokens {
         let tl_id_ = self.tl_id();
         let tl_id = &tl_id_;
         let serialize_destructure = self.as_variant_ref_destructure(&name)
@@ -765,8 +774,21 @@ impl Constructor {
         }
     }
 
+    fn as_single_type_struct(&self) -> quote::Tokens {
+        let name = self.output.name().map(|n| no_conflict_ident(n)).unwrap();
+        self.as_type_struct_base(name)
+    }
+
     fn variant_name(&self) -> syn::Ident {
         self.variant.name().map(|n| no_conflict_ident(n)).unwrap()
+    }
+
+    fn as_variant_type_struct(&self) -> quote::Tokens {
+        if self.fields.is_empty() {
+            quote!()
+        } else {
+            self.as_type_struct_base(self.variant_name())
+        }
     }
 
     fn as_variant_ref_destructure(&self, name: &syn::Ident) -> Option<quote::Tokens> {
@@ -845,8 +867,29 @@ impl Constructor {
 
     fn as_variant(&self) -> quote::Tokens {
         let name = self.variant_name();
-        let fields = self.fields_tokens(quote! {}, quote! {});
-        quote! { #name #fields }
+        if self.fields.is_empty() {
+            quote!(#name)
+        } else {
+            quote!(#name(#name))
+        }
+    }
+
+    fn as_variant_serialize_arm(&self) -> quote::Tokens {
+        let variant_name = self.variant_name();
+        if self.fields.is_empty() {
+            quote!(=> Ok(()))
+        } else {
+            quote!((ref x) => <#variant_name as ::tl::WriteType>::serialize(x, _writer))
+        }
+    }
+
+    fn as_variant_deserialize(&self) -> quote::Tokens {
+        if self.fields.is_empty() {
+            quote!()
+        } else {
+            let variant_name = self.variant_name();
+            quote!((<#variant_name as ::tl::ReadType>::deserialize_bare(_id, _reader)?))
+        }
     }
 
     fn tl_id(&self) -> Option<quote::Tokens> {
@@ -934,24 +977,24 @@ impl Constructors {
             }
             let name = no_conflict_ident(name);
             let mut ty_ir = output_ty.as_type();
+            let field_is_option = ty_ir.needs_option();
             let exhaustive = constructors.len() == all_constructors;
             if !exhaustive {
                 ty_ir.with_option = true;
             }
             let force_option = !exhaustive && ty_ir.is_unit;
-            let value = wrap_option_value(force_option || ty_ir.needs_option(), quote!(#name));
-            let ref_ = ty_ir.ref_prefix();
-            let field = if output_ty.is_optional() && !ty_ir.is_unit {
-                quote!(#name: Some(#ref_ #name))
+            let value = if field_is_option && !ty_ir.is_copy {
+                quote!(x.#name.as_ref())
             } else {
-                quote!(#ref_ #name)
+                let ref_ = ty_ir.reference_prefix();
+                wrap_option_value((ty_ir.needs_option() && !field_is_option) || force_option, quote!(#ref_ x.#name))
             };
             let constructors = constructors.into_iter()
                 .map(|c| {
                     let cons_name = c.variant_name();
-                    quote!(&#enum_name::#cons_name { #field, .. } => #value)
+                    quote!(&#enum_name::#cons_name(ref x) => #value)
                 });
-            let trailer = if !ty_ir.needs_option() && exhaustive {
+            let trailer = if exhaustive {
                 quote!()
             } else {
                 quote!(_ => None)
@@ -1010,9 +1053,9 @@ impl Constructors {
     fn as_type_id_match(&self, enum_name: &syn::Ident) -> quote::Tokens {
         let constructors = self.0.iter()
             .map(|c| {
-                let pat = c.as_empty_pattern();
+                let pat = c.as_variant_empty_pattern();
                 let tl_id = c.tl_id();
-                quote! { & #enum_name :: #pat => Some(#tl_id) }
+                quote!(&#enum_name::#pat => Some(#tl_id))
             });
         quote! {
             match self {
@@ -1025,16 +1068,13 @@ impl Constructors {
         let constructors = self.0.iter()
             .map(|c| {
                 let variant_name = c.variant_name();
-                let serialize_destructure = c.as_variant_ref_destructure(&variant_name)
-                    .unwrap_or_else(|| quote!(#variant_name));
-                let serialize_stmts = c.as_variant_serialize();
-                quote! { & #enum_name :: #serialize_destructure => { #serialize_stmts } }
+                let serialize = c.as_variant_serialize_arm();
+                quote!(&#enum_name::#variant_name #serialize)
             });
         quote! {
             match self {
                 #( #constructors, )*
             }
-            Ok(())
         }
     }
 
@@ -1045,11 +1085,8 @@ impl Constructors {
             .map(|c| {
                 let variant_name = c.variant_name();
                 let tl_id = c.tl_id();
-                let (flag_fields, deserialize) = c.as_struct_deserialize();
-                quote!(Some(#tl_id) => {
-                    #( let #flag_fields: i32; )*
-                    Ok(#enum_name :: #variant_name #deserialize)
-                })
+                let deserialize = c.as_variant_deserialize();
+                quote!(Some(#tl_id) => Ok(#enum_name::#variant_name #deserialize))
             });
         quote! {
             match _id {
@@ -1059,9 +1096,9 @@ impl Constructors {
         }
     }
 
-    fn as_struct(&self) -> quote::Tokens {
+    fn as_structs(&self) -> quote::Tokens {
         if self.0.len() == 1 {
-            return self.0[0].as_struct();
+            return self.0[0].as_single_type_struct();
         }
 
         let name = self.0[0].output.name().map(|n| no_conflict_ident(n)).unwrap();
@@ -1073,6 +1110,8 @@ impl Constructors {
             self.as_type_id_match(&name),
             self.as_serialize_match(&name),
             self.as_deserialize_match(&name));
+        let structs = self.0.iter()
+            .map(Constructor::as_variant_type_struct);
 
         quote! {
             #[derive(Debug, Clone)]
@@ -1081,6 +1120,7 @@ impl Constructors {
             }
             #methods
             #type_impl
+            #( #structs )*
         }
     }
 
@@ -1116,7 +1156,7 @@ pub fn generate_code_for(input: &str) -> String {
         let substructs = constructor_map.values_mut()
             .map(|mut c| {
                 c.fixup(Delimiter::Functions);
-                c.as_struct()
+                c.as_structs()
             });
         match ns {
             None => items.extend(substructs),
