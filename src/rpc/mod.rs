@@ -106,15 +106,6 @@ impl Session {
         self.server_salts.sort_by(|a, b| a.valid_since.cmp(&b.valid_since));
     }
 
-    pub fn adopt_negotiated_salt(&mut self, server_salt: i64) {
-        let time = UTC::now();
-        self.server_salts.push(Salt {
-            valid_until: time.clone() + Duration::minutes(10),
-            valid_since: time,
-            salt: server_salt,
-        });
-    }
-
     pub fn adopt_key(&mut self, authorization_key: encryption::AuthKey) {
         self.auth_key = Some(authorization_key);
     }
@@ -301,4 +292,15 @@ fn sha1_nonces(nonces: &[Int128]) -> Result<Vec<u8>> {
 
 pub trait RpcFunction: ::tl::WriteType {
     type Reply: ::tl::dynamic::TLDynamic + 'static;
+}
+
+impl FutureSalt {
+    pub fn from_negotiated_salt(server_salt: i64) -> Self {
+        let time = UTC::now();
+        FutureSalt {
+            valid_since: time.timestamp() as i32,
+            valid_until: (time + Duration::minutes(10)).timestamp() as i32,
+            salt: server_salt,
+        }
+    }
 }
