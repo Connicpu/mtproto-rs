@@ -22,6 +22,8 @@ pub mod error {
             BoxedAsBare {}
             ReceivedSendType {}
             UnsupportedLayer {}
+            NoAuthKey {}
+            NoSalts {}
             WrongAuthKey {}
             InvalidLength {}
             Unknown {}

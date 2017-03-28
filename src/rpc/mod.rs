@@ -6,7 +6,7 @@ use openssl::hash;
 
 pub mod encryption;
 
-use error::Result;
+use error::{ErrorKind, Result};
 use schema::{FutureSalt, Int128};
 use tl::dynamic::TLObject;
 use tl::{Bare, WriteType, serialize_message};
@@ -86,14 +86,17 @@ impl Session {
         }
     }
 
-    fn latest_server_salt(&mut self) -> i64 {
+    fn latest_server_salt(&mut self) -> Result<i64> {
         let time = {
-            let last_salt = self.server_salts.last().unwrap();
+            let last_salt = match self.server_salts.last() {
+                Some(s) => s,
+                None => return Err(ErrorKind::NoSalts.into()),
+            };
             // Make sure at least one salt is retained.
             cmp::min(UTC::now(), last_salt.valid_until.clone())
         };
         self.server_salts.retain(|s| &s.valid_until >= &time);
-        self.server_salts.first().unwrap().salt
+        Ok(self.server_salts.first().unwrap().salt)
     }
 
     pub fn add_server_salts<I>(&mut self, salts: I)
@@ -124,7 +127,7 @@ impl Session {
         let time = UTC::now();
         let timestamp = time.timestamp() as i64;
         let nano = time.nanosecond() as i64;
-        (timestamp << 32) | (nano & !3)
+        ((timestamp << 32) | (nano & 0x_7fff_fffc))
     }
 
     fn pack_message_container<I>(&mut self, payloads: I) -> ::schema::manual::MessageContainer
@@ -144,17 +147,24 @@ impl Session {
         }
     }
 
+    fn fresh_auth_key(&self) -> Result<encryption::AuthKey> {
+        match self.auth_key {
+            Some(ref key) => Ok(key.clone()),
+            None => Err(ErrorKind::NoAuthKey.into()),
+        }
+    }
+
     fn encrypted_payload_inner(&mut self, payload: Box<TLObject>, content_message: bool) -> Result<OutboundMessage> {
-        let key = self.auth_key.clone().unwrap();
+        let key = self.fresh_auth_key()?;
+        let salt = self.latest_server_salt()?;
         let message_id = self.next_message_id();
         let message = serialize_message(::schema::manual::Encrypted {
-            salt: self.latest_server_salt(),
+            salt: salt,
             session_id: self.session_id,
             message_id: message_id,
             seq_no: self.next_seq_no(content_message),
             payload: payload.into(),
         })?;
-        println!("encrypting: {:?}", message);
         Ok(OutboundMessage {
             message_id: message_id,
             message: key.encrypt_message(&message)?,
@@ -217,16 +227,19 @@ impl Session {
         }
 
         let mut cursor = io::Cursor::new(message);
-        let auth_key_id = cursor.read_i64::<LittleEndian>().unwrap();
+        let auth_key_id = cursor.read_i64::<LittleEndian>()?;
         if auth_key_id != 0 {
             cursor.into_inner();
             return self.decrypt_message(message);
         }
 
-        let message_id = cursor.read_i64::<LittleEndian>().unwrap();
-        let len = cursor.read_i32::<LittleEndian>().unwrap() as usize;
+        let message_id = cursor.read_i64::<LittleEndian>()?;
+        let len = cursor.read_i32::<LittleEndian>()? as usize;
         let pos = cursor.position() as usize;
         cursor.into_inner();
+        if message.len() < pos + len {
+            return Err(ErrorKind::AuthenticationFailure.into());
+        }
         let payload = &message[pos..pos+len];
         Ok(Ok(InboundPayload {
             message_id: message_id,
@@ -237,20 +250,23 @@ impl Session {
     }
 
     fn decrypt_message(&self, message: &[u8]) -> Result<InboundMessage> {
-        let decrypted = self.auth_key.clone().unwrap().decrypt_message(message)?;
+        let decrypted = self.fresh_auth_key()?.decrypt_message(message)?;
         let mut cursor = io::Cursor::new(&decrypted[..]);
-        let server_salt = cursor.read_i64::<LittleEndian>().unwrap();
-        let session_id = cursor.read_i64::<LittleEndian>().unwrap();
-        let message_id = cursor.read_i64::<LittleEndian>().unwrap();
-        let seq_no = cursor.read_i32::<LittleEndian>().unwrap();
-        let len = cursor.read_i32::<LittleEndian>().unwrap() as usize;
+        let server_salt = cursor.read_i64::<LittleEndian>()?;
+        let session_id = cursor.read_i64::<LittleEndian>()?;
+        let message_id = cursor.read_i64::<LittleEndian>()?;
+        let seq_no = cursor.read_i32::<LittleEndian>()?;
+        let len = cursor.read_i32::<LittleEndian>()? as usize;
         let pos = cursor.position() as usize;
         cursor.into_inner();
+        if decrypted.len() < pos + len {
+            return Err(ErrorKind::AuthenticationFailure.into());
+        }
         let payload = &decrypted[pos..pos+len];
         let computed_message_hash = sha1_bytes(&[&decrypted[..pos+len]])?;
         let computed_message_key = &computed_message_hash[4..20];
         if &message[8..24] != computed_message_key || session_id != self.session_id {
-            return Err(::error::ErrorKind::AuthenticationFailure.into());
+            return Err(ErrorKind::AuthenticationFailure.into());
         }
         if !self.server_salts.iter().any(|s| s.salt == server_salt) {
             println!("salt failure: {} not in {:#?}", server_salt, self.server_salts);

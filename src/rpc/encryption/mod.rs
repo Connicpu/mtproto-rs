@@ -91,8 +91,10 @@ fn set_slice_parts(result: &mut [u8], parts: &[&[u8]]) {
     }
 }
 
+const AUTH_KEY_SIZE: usize = 256;
+
 pub struct AuthKey {
-    auth_key: [u8; 256],
+    auth_key: [u8; AUTH_KEY_SIZE],
     aux_hash: i64,
     fingerprint: i64,
 }
@@ -115,9 +117,18 @@ impl fmt::Debug for AuthKey {
 
 impl AuthKey {
     pub fn new(key_in: &[u8]) -> Result<AuthKey> {
-        let mut key = [0u8; 256];
-        key.copy_from_slice(key_in);
-        let sha1 = sha1_bytes(&[key_in])?;
+        let mut key = [0u8; AUTH_KEY_SIZE];
+        let size_diff = (AUTH_KEY_SIZE as isize) - (key_in.len() as isize);
+        if size_diff > 0 {
+            // key longer than key_in
+            (&mut key[size_diff as usize..]).copy_from_slice(key_in);
+        } else if size_diff < 0 {
+            // key_in longer than key
+            unimplemented!()
+        } else {
+            key.copy_from_slice(key_in);
+        }
+        let sha1 = sha1_bytes(&[&key])?;
         let aux_hash = LittleEndian::read_i64(&sha1[0..8]);
         let fingerprint = LittleEndian::read_i64(&sha1[12..20]);
         Ok(AuthKey {
@@ -181,7 +192,7 @@ impl AuthKey {
         aes.ige_decrypt(&message[24..])
     }
 
-    pub fn into_inner(self) -> [u8; 256] {
+    pub fn into_inner(self) -> [u8; AUTH_KEY_SIZE] {
         self.auth_key
     }
 }

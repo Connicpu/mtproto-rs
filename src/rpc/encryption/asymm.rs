@@ -82,14 +82,22 @@ pub fn calculate_auth_key(g: u32, dh_prime: &[u8], g_a: &[u8]) -> Result<(AuthKe
     let g = bn::BigNum::from_u32(g)?;
     let dh_prime = bn::BigNum::from_slice(dh_prime)?;
     let g_a = bn::BigNum::from_slice(g_a)?;
-    let mut b = bn::BigNum::new()?;
-    b.rand(2048, bn::MSB_MAYBE_ZERO, false)?;
-    let mut g_b = bn::BigNum::new()?;
-    g_b.mod_exp(&g, &b, &dh_prime, &mut ctx)?;
-    let mut auth_key = bn::BigNum::new()?;
-    auth_key.mod_exp(&g_a, &b, &dh_prime, &mut ctx)?;
-    let auth_key = AuthKey::new(&auth_key.to_vec())?;
-    Ok((auth_key, g_b.to_vec()))
+    loop {
+        let mut b = bn::BigNum::new()?;
+        b.rand(2048, bn::MSB_MAYBE_ZERO, false)?;
+        let mut g_b = bn::BigNum::new()?;
+        g_b.mod_exp(&g, &b, &dh_prime, &mut ctx)?;
+        if g_b.num_bytes() as usize != super::AUTH_KEY_SIZE || g_b >= dh_prime {
+            continue;
+        }
+        let mut auth_key = bn::BigNum::new()?;
+        auth_key.mod_exp(&g_a, &b, &dh_prime, &mut ctx)?;
+        if auth_key.num_bytes() as usize != super::AUTH_KEY_SIZE {
+            continue;
+        }
+        let auth_key = AuthKey::new(&auth_key.to_vec())?;
+        return Ok((auth_key, g_b.to_vec()));
+    }
 }
 
 fn isqrt(x: u64) -> u64 {
