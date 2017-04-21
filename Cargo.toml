@@ -10,6 +10,4 @@ chrono = "0.3"
 crc = "1.2"
 error-chain = "0.10"
 openssl = "0.9.7"
-
-[dev-dependencies]
-rand = "0.3"
+rand = "*"

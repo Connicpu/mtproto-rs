@@ -3,10 +3,14 @@ use std::io::{Cursor, Write};
 
 use byteorder::{LittleEndian, ByteOrder, WriteBytesExt};
 use openssl::{aes, symm};
+use rand::Rng;
 
 use error::Result;
 use rpc::{sha1_bytes, sha1_nonces};
-use schema::{Int128, P_Q_inner_data};
+use schema::manual::BindAuthKeyInner;
+use schema::rpc::auth::bindTempAuthKey;
+use schema::{Int128, Object, P_Q_inner_data};
+use tl::serialize_message;
 
 pub mod asymm;
 
@@ -71,12 +75,13 @@ impl AesParams {
     }
 
     pub fn from_pq_inner_data(data: &P_Q_inner_data) -> Result<AesParams> {
-        let sha1_a = sha1_nonces(&[data.new_nonce.0, data.new_nonce.1, data.server_nonce])?;
-        let sha1_b = sha1_nonces(&[data.server_nonce, data.new_nonce.0, data.new_nonce.1])?;
-        let sha1_c = sha1_nonces(&[
-            data.new_nonce.0, data.new_nonce.1, data.new_nonce.0, data.new_nonce.1])?;
+        let new_nonce = data.new_nonce();
+        let server_nonce = data.server_nonce();
+        let sha1_a = sha1_nonces(&[new_nonce.0, new_nonce.1, server_nonce])?;
+        let sha1_b = sha1_nonces(&[server_nonce, new_nonce.0, new_nonce.1])?;
+        let sha1_c = sha1_nonces(&[new_nonce.0, new_nonce.1, new_nonce.0, new_nonce.1])?;
         let mut tmp = [0u8; 8];
-        LittleEndian::write_i64(&mut tmp, (data.new_nonce.0).0);
+        LittleEndian::write_i64(&mut tmp, (new_nonce.0).0);
         let mut ret: AesParams = Default::default();
         set_slice_parts(&mut ret.key, &[&sha1_a, &sha1_b[..12]]);
         set_slice_parts(&mut ret.iv, &[&sha1_b[12..], &sha1_c, &tmp[..4]]);
@@ -194,5 +199,30 @@ impl AuthKey {
 
     pub fn into_inner(self) -> [u8; AUTH_KEY_SIZE] {
         self.auth_key
+    }
+
+    pub fn bind_temp_auth_key<R: Rng>(self, temp_key: &AuthKey, expires_at: i32, message_id: i64, rng: &mut R)
+                                      -> Result<(i64, bindTempAuthKey)> {
+        let nonce: i64 = rng.gen();
+        let temp_session_id: i64 = rng.gen();
+        let inner = ::schema::manual::Encrypted {
+            salt: rng.gen(),
+            session_id: rng.gen(),
+            message_id: message_id,
+            seq_no: 0,
+            payload: (Box::new(BindAuthKeyInner {
+                nonce: nonce,
+                temp_auth_key_id: temp_key.fingerprint,
+                perm_auth_key_id: self.fingerprint,
+                temp_session_id: temp_session_id,
+                expires_at: expires_at,
+            }) as Object).into(),
+        };
+        Ok((temp_session_id, bindTempAuthKey {
+            perm_auth_key_id: self.fingerprint,
+            nonce: nonce,
+            expires_at: expires_at,
+            encrypted_message: self.encrypt_message(&serialize_message(inner)?)?,
+        }))
     }
 }

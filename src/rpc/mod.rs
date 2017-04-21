@@ -3,13 +3,20 @@ use std::{cmp, io, mem};
 use chrono::{DateTime, Duration, UTC, Timelike, TimeZone};
 use byteorder::{LittleEndian, ByteOrder, ReadBytesExt};
 use openssl::hash;
+use rand::Rng;
 
 pub mod encryption;
 
 use error::{ErrorKind, Result};
-use schema::{FutureSalt, Int128};
-use tl::dynamic::TLObject;
+use schema::{FutureSalt, Int128, Object};
 use tl::{Bare, WriteType, serialize_message};
+
+fn next_message_id() -> i64 {
+    let time = UTC::now();
+    let timestamp = time.timestamp() as i64;
+    let nano = time.nanosecond() as i64;
+    ((timestamp << 32) | (nano & 0x_7fff_fffc))
+}
 
 #[derive(Debug, Clone)]
 pub struct AppId {
@@ -37,6 +44,7 @@ impl From<FutureSalt> for Salt {
 #[derive(Debug, Clone)]
 pub struct Session {
     session_id: i64,
+    temp_session_id: Option<i64>,
     server_salts: Vec<Salt>,
     seq_no: i32,
     auth_key: Option<encryption::AuthKey>,
@@ -64,6 +72,7 @@ impl Session {
     pub fn new(session_id: i64, app_id: AppId) -> Session {
         Session {
             session_id: session_id,
+            temp_session_id: None,
             server_salts: vec![],
             seq_no: 0,
             auth_key: None,
@@ -114,20 +123,13 @@ impl Session {
         self.to_ack.push(id);
     }
 
-    fn next_message_id(&mut self) -> i64 {
-        let time = UTC::now();
-        let timestamp = time.timestamp() as i64;
-        let nano = time.nanosecond() as i64;
-        ((timestamp << 32) | (nano & 0x_7fff_fffc))
-    }
-
     fn pack_message_container<I>(&mut self, payloads: I) -> ::schema::manual::MessageContainer
-        where I: IntoIterator<Item = (bool, Box<TLObject>)>,
+        where I: IntoIterator<Item = (bool, Object)>,
     {
         let messages: Vec<_> = payloads.into_iter()
             .map(|(content_message, payload)| {
                 ::schema::manual::Message {
-                    msg_id: self.next_message_id(),
+                    msg_id: next_message_id(),
                     seqno: self.next_seq_no(content_message),
                     body: payload.into(),
                 }
@@ -145,10 +147,10 @@ impl Session {
         }
     }
 
-    fn encrypted_payload_inner(&mut self, payload: Box<TLObject>, content_message: bool) -> Result<OutboundMessage> {
+    fn encrypted_payload_inner(&mut self, payload: Object, content_message: bool) -> Result<OutboundMessage> {
         let key = self.fresh_auth_key()?;
         let salt = self.latest_server_salt()?;
-        let message_id = self.next_message_id();
+        let message_id = next_message_id();
         let message = serialize_message(::schema::manual::Encrypted {
             salt: salt,
             session_id: self.session_id,
@@ -162,10 +164,10 @@ impl Session {
         })
     }
 
-    fn pack_encrypted_payload_with_acks(&mut self, payload: Box<TLObject>) -> Result<OutboundMessage> {
+    fn pack_encrypted_payload_with_acks(&mut self, payload: Object) -> Result<OutboundMessage> {
         let acks = Box::new(::schema::MsgsAck {
             msg_ids: mem::replace(&mut self.to_ack, vec![]),
-        }) as Box<TLObject>;
+        }) as Object;
         let combined = self.pack_message_container(vec![(false, acks), (true, payload)]);
         // The message id of the interior message which was 'payload'.
         let message_id = combined.messages.0[1].msg_id;
@@ -188,11 +190,11 @@ impl Session {
     pub fn plain_payload<P>(&mut self, payload: P) -> Result<OutboundMessage>
         where P: WriteType + 'static,
     {
-        let message_id = self.next_message_id();
+        let message_id = next_message_id();
         let message = serialize_message(::schema::manual::Plain {
             auth_key_id: 0,
             message_id: message_id,
-            payload: (Box::new(payload) as Box<TLObject>).into(),
+            payload: (Box::new(payload) as Object).into(),
         })?;
         Ok(OutboundMessage {
             message_id: message_id,
@@ -256,7 +258,8 @@ impl Session {
         let payload = &decrypted[pos..pos+len];
         let computed_message_hash = sha1_bytes(&[&decrypted[..pos+len]])?;
         let computed_message_key = &computed_message_hash[4..20];
-        if &message[8..24] != computed_message_key || session_id != self.session_id {
+        if &message[8..24] != computed_message_key || (session_id != self.session_id
+                                                       && Some(session_id) != self.temp_session_id) {
             return Err(ErrorKind::AuthenticationFailure.into());
         }
         if !self.server_salts.iter().any(|s| s.salt == server_salt) {
@@ -268,6 +271,26 @@ impl Session {
             was_encrypted: true,
             seq_no: Some(seq_no),
         }))
+    }
+
+    pub fn bind_from_permanent_auth_key<R: Rng>(&mut self, perm_key: encryption::AuthKey, expires_at: i32, rng: &mut R)
+                                                -> Result<OutboundMessage> {
+        let temp_key = self.fresh_auth_key()?;
+        let salt = self.latest_server_salt()?;
+        let message_id = next_message_id();
+        let (temp_session_id, bind_message) = perm_key.bind_temp_auth_key(&temp_key, expires_at, message_id, rng)?;
+        let message = ::schema::manual::Encrypted {
+            salt: salt,
+            session_id: temp_session_id,
+            message_id: message_id,
+            seq_no: self.next_seq_no(true),
+            payload: (Box::new(bind_message) as Object).into(),
+        };
+        self.temp_session_id = Some(temp_session_id);
+        Ok(OutboundMessage {
+            message_id: message_id,
+            message: temp_key.encrypt_message(&serialize_message(message)?)?,
+        })
     }
 }
 

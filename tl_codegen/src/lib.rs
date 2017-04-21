@@ -555,6 +555,7 @@ impl Constructor {
         match self.variant.name() {
             Some("resPQ") |
             Some("p_q_inner_data") |
+            Some("p_q_inner_data_temp") |
             Some("server_DH_params_ok") |
             Some("server_DH_inner_data") |
             Some("client_DH_inner_data") |
