@@ -3,6 +3,7 @@ name = "mtproto"
 version = "0.1.0"
 authors = ["Connor Hilarides <connorcpu@live.com>"]
 license = "MIT/Apache-2.0"
+build = "build.rs"
 
 [dependencies]
 byteorder = "1"
@@ -11,3 +12,6 @@ crc = "1.2"
 error-chain = "0.10"
 openssl = "0.9.7"
 rand = "*"
+
+[build-dependencies.tl_codegen]
+path = "tl_codegen"
