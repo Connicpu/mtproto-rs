@@ -9,9 +9,6 @@ pub use super::error::{Error, ErrorKind, Result};
 pub mod parsing;
 pub mod dynamic;
 
-/// The API version we've implemented against
-pub const MTPROTO_LAYER: i32 = 62;
-
 pub trait IdentifiableType {
     fn type_id(&self) -> Option<ConstructorId> { None }
 }

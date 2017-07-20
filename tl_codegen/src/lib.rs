@@ -90,6 +90,7 @@ pub mod parser {
     pub enum Item {
         Delimiter(Delimiter),
         Constructor(Constructor),
+        Layer(u32),
     }
 
     fn utf8(v: Vec<u8>) -> String {
@@ -190,17 +191,22 @@ pub mod parser {
         )
     }
 
+    fn layer() -> Parser<u8, u32> {
+        seq(b"// LAYER ") * decimal()
+    }
+
     fn space() -> Parser<u8, ()> {
         let end_comment = || seq(b"*/");
         ( one_of(b" \n").discard() |
-          (seq(b"//") - none_of(b"\n").repeat(0..)).discard() |
+          (seq(b"//") - !(seq(b" LAYER ")) - none_of(b"\n").repeat(0..)).discard() |
           (seq(b"/*") * (!end_comment() * take(1)).repeat(0..) * end_comment()).discard()
         ).repeat(0..).discard()
     }
 
     fn item() -> Parser<u8, Item> {
         ( delimiter().map(Item::Delimiter) |
-          constructor().map(Item::Constructor)
+          constructor().map(Item::Constructor) |
+          layer().map(Item::Layer)
         ) - space()
     }
 
@@ -226,10 +232,10 @@ struct Constructors(Vec<Constructor>);
 struct AllConstructors {
     types: BTreeMap<Option<String>, BTreeMap<String, Constructors>>,
     functions: BTreeMap<Option<String>, Vec<Constructor>>,
+    layer: u32,
 }
 
 fn filter_items(iv: &mut Vec<Item>) {
-    let mut ensure_types = vec![Item::Delimiter(Delimiter::Types)];
     iv.retain(|i| {
         let c = match i {
             &Item::Constructor(ref c) => c,
@@ -239,15 +245,9 @@ fn filter_items(iv: &mut Vec<Item>) {
         match c.variant.name() {
             Some("true") |
             Some("vector") => false,
-            Some("future_salt") |
-            Some("future_salts") => {
-                ensure_types.push(Item::Constructor(c.clone()));
-                false
-            },
             _ => true,
         }
     });
-    iv.extend(ensure_types);
 }
 
 fn partition_by_delimiter_and_namespace(iv: Vec<Item>) -> AllConstructors {
@@ -255,6 +255,7 @@ fn partition_by_delimiter_and_namespace(iv: Vec<Item>) -> AllConstructors {
     let mut ret = AllConstructors {
         types: BTreeMap::new(),
         functions: BTreeMap::new(),
+        layer: 0,
     };
     for i in iv {
         match i {
@@ -275,6 +276,7 @@ fn partition_by_delimiter_and_namespace(iv: Vec<Item>) -> AllConstructors {
                     },
                 }
             },
+            Item::Layer(i) => ret.layer = i,
         }
     }
     ret
@@ -461,7 +463,6 @@ fn names_to_type(names: &Vec<String>) -> TypeIR {
             "string" => return TypeIR::noncopyable(quote! { String }),
             "vector" => return TypeIR::noncopyable(quote! { #type_prefix BareVec }),
             "Vector" => return TypeIR::noncopyable(quote! { Vec }),
-            "future_salt" => return TypeIR::noncopyable(quote! { #type_prefix FutureSalt }),
             _ => (),
         }
     }
@@ -481,7 +482,29 @@ fn names_to_type(names: &Vec<String>) -> TypeIR {
     }
 }
 
+type TypeFixupMap = BTreeMap<Vec<String>, Vec<String>>;
+
 impl Type {
+    fn fixup(&mut self, fixup_map: &TypeFixupMap) {
+        use Type::*;
+        let loc = match *self {
+            Named(ref mut names) => names,
+            Generic(ref mut container, ref mut ty) => {
+                ty.fixup(fixup_map);
+                container
+            },
+            Flagged(_, _, ref mut ty) => {
+                ty.fixup(fixup_map);
+                return;
+            },
+            _ => return,
+        };
+        match fixup_map.get(loc) {
+            Some(replacement) => loc.clone_from(replacement),
+            None => (),
+        }
+    }
+
     fn as_type(&self) -> TypeIR {
         use Type::*;
         match self {
@@ -524,11 +547,11 @@ impl Field {
 }
 
 impl Constructor {
-    fn fixup(&mut self, which: Delimiter) {
+    fn fixup(&mut self, which: Delimiter, fixup_map: &TypeFixupMap) {
         if which == Delimiter::Functions {
             self.fixup_output();
         }
-        self.fixup_fields();
+        self.fixup_fields(fixup_map);
         self.fixup_variant();
     }
 
@@ -551,7 +574,11 @@ impl Constructor {
         false
     }
 
-    fn fixup_fields(&mut self) {
+    fn fixup_fields(&mut self, fixup_map: &TypeFixupMap) {
+        for f in &mut self.fields {
+            f.ty.fixup(fixup_map);
+        }
+
         match self.variant.name() {
             Some("resPQ") |
             Some("p_q_inner_data") |
@@ -564,8 +591,8 @@ impl Constructor {
             _ => return,
         }
         for f in &mut self.fields {
-            match &mut f.ty {
-                &mut Type::Named(ref mut v) if v.len() == 1 && v[0] == "string" => {
+            match f.ty {
+                Type::Named(ref mut v) if v.len() == 1 && v[0] == "string" => {
                     v[0] = "bytes".into();
                 },
                 _ => (),
@@ -941,9 +968,9 @@ impl Constructor {
 }
 
 impl Constructors {
-    fn fixup(&mut self, delim: Delimiter) {
+    fn fixup(&mut self, delim: Delimiter, fixup_map: &TypeFixupMap) {
         for c in &mut self.0 {
-            c.fixup(delim);
+            c.fixup(delim, fixup_map);
         }
     }
 
@@ -1145,10 +1172,29 @@ pub fn generate_code_for(input: &str) -> String {
         partition_by_delimiter_and_namespace(items)
     };
 
+    let layer = constructors.layer as i32;
     let mut items = vec![quote! {
         #![allow(non_camel_case_types)]
         pub use manual_types::*;
+
+        pub const LAYER: i32 = #layer;
     }];
+
+    let variants_to_outputs: TypeFixupMap = constructors.types.iter()
+        .flat_map(|(ns, constructor_map)| {
+            constructor_map.iter().flat_map(move |(output, constructors)| {
+                constructors.0.iter().filter_map(move |constructor| {
+                    let variant_name = match constructor.variant {
+                        Type::Named(ref n) => n,
+                        _ => return None,
+                    };
+                    let mut full_output: Vec<String> = ns.iter().cloned().collect();
+                    full_output.push(output.clone());
+                    Some((variant_name.clone(), full_output))
+                })
+            })
+        })
+        .collect();
 
     let mut dynamic_ctors = vec![];
     for (ns, mut constructor_map) in constructors.types {
@@ -1156,7 +1202,7 @@ pub fn generate_code_for(input: &str) -> String {
             constructor_map.values().flat_map(Constructors::as_dynamic_ctors));
         let substructs = constructor_map.values_mut()
             .map(|mut c| {
-                c.fixup(Delimiter::Functions);
+                c.fixup(Delimiter::Functions, &variants_to_outputs);
                 c.as_structs()
             });
         match ns {
@@ -1187,7 +1233,7 @@ pub fn generate_code_for(input: &str) -> String {
         substructs.sort_by(|c1, c2| c1.variant.cmp(&c2.variant));
         let substructs = substructs.into_iter()
             .map(|mut c| {
-                c.fixup(Delimiter::Functions);
+                c.fixup(Delimiter::Functions, &variants_to_outputs);
                 c.as_function_struct()
             });
         match ns {
