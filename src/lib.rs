@@ -6,7 +6,7 @@ extern crate chrono;
 extern crate crc;
 #[macro_use] extern crate error_chain;
 extern crate openssl;
-#[macro_use] extern crate tl_macros;
+extern crate rand;
 
 pub mod error {
     error_chain! {
@@ -19,23 +19,22 @@ pub mod error {
 
         errors {
             InvalidData {}
-            InvalidType {}
-            UnknownType {}
-            PrimitiveAsPolymorphic {}
+            InvalidType(expected: Vec<::tl::parsing::ConstructorId>, received: Option<::tl::parsing::ConstructorId>) {}
             BoxedAsBare {}
             ReceivedSendType {}
             UnsupportedLayer {}
+            NoAuthKey {}
+            NoSalts {}
             WrongAuthKey {}
             InvalidLength {}
             Unknown {}
             FactorizationFailure {}
+            AuthenticationFailure {}
         }
     }
 }
 
 pub mod tl;
 pub mod rpc;
-
-#[derive(TLDynamic)]
-#[tl_register_all]
-pub struct AllDynamicTypes;
+pub mod schema;
+mod manual_types;
