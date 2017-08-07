@@ -1,0 +1,15 @@
+[package]
+name = "tl_kex"
+version = "0.1.0"
+authors = ["Aaron Gallagher <_@habnab.it>"]
+
+[dependencies]
+byteorder = "*"
+error-chain = "*"
+futures = "*"
+futures-cpupool = "*"
+openssl = "*"
+rand = "*"
+
+[dependencies.mtproto]
+path = ".."
