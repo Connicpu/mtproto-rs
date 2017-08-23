@@ -10,7 +10,7 @@ byteorder = "1"
 chrono = "0.3"
 crc = "1.2"
 error-chain = "0.10"
-openssl = "0.9.7"
+openssl = "0.9.17"
 rand = "*"
 
 [build-dependencies.tl_codegen]

@@ -299,7 +299,7 @@ fn sha1_bytes(parts: &[&[u8]]) -> Result<Vec<u8>> {
     for part in parts {
         hasher.update(part)?;
     }
-    Ok(hasher.finish()?)
+    Ok(hasher.finish2().map(|b| b.to_vec())?)
 }
 
 fn sha1_nonces(nonces: &[Int128]) -> Result<Vec<u8>> {
@@ -310,7 +310,7 @@ fn sha1_nonces(nonces: &[Int128]) -> Result<Vec<u8>> {
         LittleEndian::write_i64(&mut tmp[8..], nonce.1);
         hasher.update(&tmp)?;
     }
-    Ok(hasher.finish()?)
+    Ok(hasher.finish2().map(|b| b.to_vec())?)
 }
 
 pub trait RpcFunction: ::tl::WriteType {

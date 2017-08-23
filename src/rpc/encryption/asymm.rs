@@ -61,7 +61,7 @@ impl RsaPublicKey {
         }
         let mut hasher = hash::Hasher::new(hash::MessageDigest::sha1())?;
         hasher.update(&buf.into_inner())?;
-        Ok(hasher.finish()?)
+        Ok(hasher.finish2().map(|b| b.to_vec())?)
     }
 
     pub fn fingerprint(&self) -> Result<i64> {
