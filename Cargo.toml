@@ -7,11 +7,10 @@ build = "build.rs"
 
 [dependencies]
 byteorder = "1"
-chrono = "0.3"
-crc = "1.2"
-error-chain = "0.10"
+chrono = "0.4"
+error-chain = "0.11"
 openssl = "0.9.17"
-rand = "*"
+rand = "0.3"
 
 [build-dependencies.tl_codegen]
 path = "tl_codegen"

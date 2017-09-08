@@ -1,6 +1,6 @@
 use std::{cmp, io, mem};
 
-use chrono::{DateTime, Duration, UTC, Timelike, TimeZone};
+use chrono::{DateTime, Duration, Utc, Timelike, TimeZone};
 use byteorder::{LittleEndian, ByteOrder, ReadBytesExt};
 use openssl::hash;
 use rand::Rng;
@@ -12,7 +12,7 @@ use schema::{FutureSalt, Int128, Object};
 use tl::{Bare, WriteType, serialize_message};
 
 fn next_message_id() -> i64 {
-    let time = UTC::now();
+    let time = Utc::now();
     let timestamp = time.timestamp() as i64;
     let nano = time.nanosecond() as i64;
     ((timestamp << 32) | (nano & 0x_7fff_fffc))
@@ -26,16 +26,16 @@ pub struct AppId {
 
 #[derive(Debug, Clone)]
 struct Salt {
-    valid_since: DateTime<UTC>,
-    valid_until: DateTime<UTC>,
+    valid_since: DateTime<Utc>,
+    valid_until: DateTime<Utc>,
     salt: i64,
 }
 
 impl From<FutureSalt> for Salt {
     fn from(fs: FutureSalt) -> Self {
         Salt {
-            valid_since: UTC.timestamp(fs.valid_since as i64, 0),
-            valid_until: UTC.timestamp(fs.valid_until as i64, 0),
+            valid_since: Utc.timestamp(fs.valid_since as i64, 0),
+            valid_until: Utc.timestamp(fs.valid_until as i64, 0),
             salt: fs.salt,
         }
     }
@@ -102,7 +102,7 @@ impl Session {
                 None => return Err(ErrorKind::NoSalts.into()),
             };
             // Make sure at least one salt is retained.
-            cmp::min(UTC::now(), last_salt.valid_until.clone())
+            cmp::min(Utc::now(), last_salt.valid_until.clone())
         };
         self.server_salts.retain(|s| &s.valid_until >= &time);
         Ok(self.server_salts.first().unwrap().salt)
@@ -319,7 +319,7 @@ pub trait RpcFunction: ::tl::WriteType {
 
 impl FutureSalt {
     pub fn from_negotiated_salt(server_salt: i64) -> Self {
-        let time = UTC::now();
+        let time = Utc::now();
         FutureSalt {
             valid_since: time.timestamp() as i32,
             valid_until: (time + Duration::minutes(10)).timestamp() as i32,
