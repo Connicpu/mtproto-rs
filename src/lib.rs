@@ -1,4 +1,4 @@
-#![feature(associated_consts, specialization)]
+#![feature(specialization)]
 #![recursion_limit = "128"]
 
 extern crate byteorder;
