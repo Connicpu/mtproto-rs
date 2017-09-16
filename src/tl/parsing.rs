@@ -3,7 +3,8 @@ use std::cmp::min;
 use std::io::{self, Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-use tl::dynamic::{TLCtorMap, TLObject};
+//use tl::dynamic::{TLCtorMap, TLObject};
+use tl::dynamic::TLObject;
 use tl;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -53,10 +54,10 @@ pub trait Writer: Write {
     }
 }
 
-pub struct ReadContext<R: Read> {
+/*pub struct ReadContext<R: Read> {
     stream: R,
     ctors: Option<TLCtorMap<ReadContext<R>>>,
-}
+}*/
 
 pub struct AlignedReader<'a, R: 'a + ?Sized + Reader> {
     reader: &'a mut R,
@@ -79,7 +80,7 @@ pub struct AlignedWriter<W: Writer>{
     position: usize,
 }
 
-impl<R: Read> ReadContext<R> {
+/*impl<R: Read> ReadContext<R> {
     pub fn new(reader: R) -> Self {
         ReadContext {
             stream: reader,
@@ -108,7 +109,7 @@ impl<R: Read> Read for ReadContext<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.stream.read(buf)
     }
-}
+}*/
 
 impl<'a, R: ?Sized + Reader> Reader for AlignedReader<'a, R> {
     fn read_tl<T: tl::ReadType>(&mut self) -> tl::Result<T> {

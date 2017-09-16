@@ -1,13 +1,21 @@
-#![feature(specialization)]
+//#![feature(specialization)]
 #![recursion_limit = "128"]
 
 extern crate byteorder;
 extern crate chrono;
-#[macro_use] extern crate error_chain;
+#[macro_use]
+extern crate error_chain;
+extern crate extprim;
 extern crate openssl;
 extern crate rand;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
+extern crate serde_mtproto;
+//#[macro_use]
+//extern crate serde_mtproto_derive;
 
-pub mod error {
+/*pub mod error {
     error_chain! {
         foreign_links {
             Io(::std::io::Error);
@@ -31,9 +39,14 @@ pub mod error {
             AuthenticationFailure {}
         }
     }
-}
+}*/
 
-pub mod tl;
+mod manual_types;
+
+pub mod error;
 pub mod rpc;
 pub mod schema;
-mod manual_types;
+pub mod tl;
+
+
+pub use error::{Error, ErrorKind, Result, ResultExt};

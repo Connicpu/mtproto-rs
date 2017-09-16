@@ -1218,7 +1218,7 @@ pub fn generate_code_for(input: &str) -> String {
         }
     }
 
-    dynamic_ctors.sort_by(|t1, t2| (&t1.0, t1.1).cmp(&(&t2.0, t2.1)));
+    /*dynamic_ctors.sort_by(|t1, t2| (&t1.0, t1.1).cmp(&(&t2.0, t2.1)));
     let dynamic_ctors = dynamic_ctors.into_iter()
         .map(|t| t.2);
     items.push(quote! {
@@ -1226,7 +1226,7 @@ pub fn generate_code_for(input: &str) -> String {
             cstore.add::<Vec<Object>>(::tl::VEC_TYPE_ID);
             #( #dynamic_ctors; )*
         }
-    });
+    });*/
 
     let mut rpc_items = vec![];
     for (ns, mut substructs) in constructors.functions {

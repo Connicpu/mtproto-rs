@@ -1,13 +1,12 @@
 use std::fmt;
 use std::any::Any;
-use std::collections::HashMap;
 use tl::{self, Result};
 use tl::parsing::{ConstructorId, Reader, Writer};
 
-pub struct TLCtor<R: Reader>(pub fn(Option<ConstructorId>, &mut R) -> Result<Box<TLObject>>);
-pub struct TLCtorMap<R: Reader>(pub HashMap<ConstructorId, TLCtor<R>>);
+//pub struct TLCtor<R: Reader>(pub fn(Option<ConstructorId>, &mut R) -> Result<Box<TLObject>>);
+//pub struct TLCtorMap<R: Reader>(pub HashMap<ConstructorId, TLCtor<R>>);
 
-impl<R: Reader> Clone for TLCtor<R> {
+/*impl<R: Reader> Clone for TLCtor<R> {
     fn clone(&self) -> Self {
         TLCtor(self.0)
     }
@@ -31,7 +30,7 @@ impl<R: Reader> Default for TLCtorMap<R> {
     fn default() -> TLCtorMap<R> {
         TLCtorMap(Default::default())
     }
-}
+}*/
 
 pub trait TLObject: Any + tl::WriteType {
     fn as_any(&self) -> &Any;
@@ -39,11 +38,11 @@ pub trait TLObject: Any + tl::WriteType {
 }
 
 impl<T: Any + tl::WriteType> TLObject for T {
-    default fn as_any(&self) -> &Any { self }
-    default fn as_boxed_any(self: Box<Self>) -> Box<Any> { self }
+    /*default*/ fn as_any(&self) -> &Any { self }
+    /*default*/ fn as_boxed_any(self: Box<Self>) -> Box<Any> { self }
 }
 
-#[derive(Debug, Clone)]
+/*#[derive(Debug, Clone)]
 pub struct UnreadableBag {
     pub tl_id: Option<ConstructorId>,
     pub bytes: Vec<u8>,
@@ -65,7 +64,7 @@ impl tl::WriteType for UnreadableBag {
 impl TLObject for UnreadableBag {
     fn as_any(&self) -> &Any { self }
     fn as_boxed_any(self: Box<Self>) -> Box<Any> { self }
-}
+}*/
 
 impl Clone for Box<TLObject> {
     fn clone(&self) -> Self {
@@ -107,7 +106,7 @@ impl tl::ReadType for Box<TLObject> {
     }
 }
 
-impl TLObject for Box<TLObject> {
+/*impl TLObject for Box<TLObject> {
     fn as_any(&self) -> &Any {
         (&**self).as_any()
     }
@@ -115,7 +114,7 @@ impl TLObject for Box<TLObject> {
     fn as_boxed_any(self: Box<Self>) -> Box<Any> {
         (*self).as_boxed_any()
     }
-}
+}*/
 
 impl fmt::Debug for TLObject {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -169,7 +168,7 @@ impl From<Box<TLObject>> for LengthAndObject {
 //     }
 // }
 
-pub trait TLDynamic: TLObject {
+/*pub trait TLDynamic: TLObject {
     fn deserialize<R: Reader>(id: Option<ConstructorId>, reader: &mut R) -> Result<Box<TLObject>>;
     fn downcast_from(b: Box<TLObject>) -> ::std::result::Result<Self, Box<TLObject>>
         where Self: Sized;
@@ -183,7 +182,7 @@ fn downcast<T: TLObject>(b: Box<TLObject>) -> ::std::result::Result<T, Box<TLObj
     }
 }
 
-impl TLDynamic for UnreadableBag {
+/*impl TLDynamic for UnreadableBag {
     fn deserialize<R: Reader>(id: Option<ConstructorId>, reader: &mut R) -> Result<Box<TLObject>> {
         let mut remainder = vec![];
         reader.read_to_end(&mut remainder)?;
@@ -198,7 +197,7 @@ impl TLDynamic for UnreadableBag {
     {
         downcast::<Self>(b)
     }
-}
+}*/
 
 impl<T: ?Sized + TLObject + tl::ReadType> TLDynamic for T {
     fn deserialize<R: Reader>(id: Option<ConstructorId>, reader: &mut R) -> Result<Box<TLObject>> {
@@ -221,4 +220,4 @@ impl<T: TLObject + tl::ReadType> TLDynamic for Vec<T> {
             .map(downcast::<T>)
             .collect()
     }
-}
+}*/
