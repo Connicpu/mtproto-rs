@@ -26,8 +26,6 @@ pub enum Message<T> {
         body: Boxed<T>,
     },
     Decrypted {
-        auth_key_id: i64,
-        msg_key: i128,
         decrypted_data: DecryptedData<T>,
     },
 }
@@ -58,15 +56,16 @@ impl<T: Serialize> Serialize for Message<T> {
 
                 msg_to_serialize.serialize(serializer)
             },
-            Message::Decrypted { ref auth_key_id, ref msg_key, ref decrypted_data } => {
+            Message::Decrypted { ref decrypted_data } => {
                 let decrypted_data_serialized = serde_mtproto::to_bytes(decrypted_data)
                     .map_err(S::Error::custom)?;
-                let encrypted_data = decrypted_data.key.encrypt_message(&decrypted_data_serialized)
+                let (auth_key_id, msg_key, encrypted_data) = decrypted_data.key
+                    .encrypt_message_bytes(&decrypted_data_serialized)
                     .map_err(S::Error::custom)?;
 
                 let msg_to_serialize: RawMessage<()> = RawMessage::Encrypted {
-                    auth_key_id: *auth_key_id,
-                    msg_key: *msg_key,
+                    auth_key_id: auth_key_id,
+                    msg_key: msg_key,
                     encrypted_data: UnsizedByteBuf::new(encrypted_data),
                 };
 
@@ -120,34 +119,35 @@ impl<'de, T: DeserializeOwned> DeserializeSeed<'de> for MessageSeed<T> {
                 let errconv = |kind: ErrorKind| A::Error::custom(error::Error::from(kind));
 
                 let auth_key_id = seq.next_element()?
-                    .ok_or(errconv(ErrorKind::NoField))?;
+                    .ok_or(errconv(ErrorKind::NotEnoughFields("Message", 0)))?;
 
                 let message = if auth_key_id == 0 {
                     let message_id = seq.next_element()?
-                        .ok_or(errconv(ErrorKind::NoField))?;
+                        .ok_or(errconv(ErrorKind::NotEnoughFields("Message::PlainText", 1)))?;
                     let body: EitherRef<Boxed<T>> = seq.next_element()?
-                        .ok_or(errconv(ErrorKind::NoField))?;
+                        .ok_or(errconv(ErrorKind::NotEnoughFields("Message::PlainText", 2)))?;
 
                     Message::PlainText {
                         message_id: message_id,
-                        body: body.into_owned().unwrap(),
+                        body: body.into_owned().unwrap(),    // we know it's owned here
                     }
                 } else {
-                    let msg_key = seq.next_element()?
-                        .ok_or(errconv(ErrorKind::NoField.into()))?;
+                    let message_key = seq.next_element()?
+                        .ok_or(errconv(ErrorKind::NotEnoughFields("Message::Decrypted", 1)))?;
 
                     let seed = UnsizedByteBufSeed::new(self.encrypted_data_len);
                     let encrypted_data = seq.next_element_seed(seed)?
-                        .ok_or(errconv(ErrorKind::NoField))?;
+                        .ok_or(errconv(ErrorKind::NotEnoughFields("Message::Decrypted", 2)))?;
 
-                    let decrypted_data_serialized = self.key.decrypt_message(&encrypted_data.into_inner())
+                    let decrypted_data_serialized = self.key
+                        .decrypt_message_bytes(auth_key_id, message_key, &encrypted_data.into_inner())
                         .map_err(A::Error::custom)?;
-                    let decrypted_data = serde_mtproto::from_reader(decrypted_data_serialized.as_slice(), None)
+                    let mut decrypted_data: DecryptedData<T> = serde_mtproto::from_reader(decrypted_data_serialized.as_slice(), None)
                         .map_err(A::Error::custom)?;
+
+                    decrypted_data.key = self.key;
 
                     Message::Decrypted {
-                        auth_key_id: auth_key_id,
-                        msg_key: msg_key,
                         decrypted_data: decrypted_data,
                     }
                 };

@@ -122,7 +122,7 @@ impl Session {
 
     fn latest_server_salt(&mut self) -> error::Result<i64> {
         let time = {
-            let last_salt: &Salt = self.server_salts.last().ok_or(error::Error::from(ErrorKind::NoSalts))?;
+            let last_salt: &Salt = self.server_salts.last().ok_or(error::Error::from(ErrorKind::NoServerSalts))?;
 
             // Make sure at least one salt is retained.
             cmp::min(Utc::now(), last_salt.valid_until.clone())
@@ -134,8 +134,9 @@ impl Session {
         Ok(salt)
     }
 
-    pub fn add_server_salts<I>(&mut self, salts: I)
-        where I: IntoIterator<Item = FutureSalt>,
+    pub fn add_server_salts<S, I>(&mut self, salts: I)
+        where S: Into<Salt>,
+              I: IntoIterator<Item = S>
     {
         self.server_salts.extend(salts.into_iter().map(Into::into));
         self.server_salts.sort_by(|a, b| a.valid_since.cmp(&b.valid_since));
@@ -197,8 +198,6 @@ impl Session {
 
         // FIXME: implement
         let message = Message::Decrypted {
-            auth_key_id: unimplemented!(),
-            msg_key: unimplemented!(),
             decrypted_data: decrypted_data,
         };
 

@@ -6,8 +6,9 @@ extern crate mtproto;
 extern crate serde_mtproto;
 
 use mtproto::rpc::{AppId, Session};
-use mtproto::rpc::message::{Message, MessageType};
 use mtproto::rpc::encryption::AuthKey;
+use mtproto::rpc::message::{Message, MessageType};
+use mtproto::schema::FutureSalt;
 
 
 mod error {
@@ -24,12 +25,10 @@ mod error {
 }
 
 
-fn run() -> error::Result<()> {
-    env_logger::init()?;
-
+fn plain_text() -> error::Result<()> {
     let app_id = AppId::new(9000, "random text".to_owned());
     let mut session = Session::new(100500, app_id);
-    session.adopt_key(AuthKey::default());
+    session.adopt_key(AuthKey::new(&[0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5, 0x96, 0x87])?);
 
     let message = session.create_message(23, MessageType::PlainText)?;
     println!("{:?}", message);
@@ -39,6 +38,39 @@ fn run() -> error::Result<()> {
     println!("{:?}", msg);
 
     assert_eq!(message, msg);
+
+    Ok(())
+}
+
+fn encrypted() -> error::Result<()> {
+    let app_id = AppId::new(9000, "random text".to_owned());
+    let mut session = Session::new(100500, app_id);
+    session.adopt_key(AuthKey::new(&[0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5, 0x96, 0x87])?);
+
+    let future_salt = FutureSalt {
+        valid_since: 0x0100_0000,
+        valid_until: 0x0fff_ffff,
+        salt: 0x1234_5678_90ab_cdef,
+    };
+    session.add_server_salts(vec![future_salt]);
+
+    let message = session.create_message(23, MessageType::Encrypted)?;
+    println!("{:?}", message);
+    let bytes = serde_mtproto::to_bytes(&message)?;
+    println!("{:?}", bytes);
+    let msg: Message<i32> = session.process_message(&bytes)?;
+    println!("{:?}", msg);
+
+    assert_eq!(message, msg);
+
+    Ok(())
+}
+
+fn run() -> error::Result<()> {
+    env_logger::init()?;
+
+    plain_text()?;
+    encrypted()?;
 
     Ok(())
 }
