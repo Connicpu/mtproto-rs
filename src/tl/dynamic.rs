@@ -1,7 +1,11 @@
 use std::fmt;
 use std::any::Any;
-use tl::{self, Result};
-use tl::parsing::{ConstructorId, Reader, Writer};
+
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
+use serde_mtproto::Identifiable;
+
+//use tl::{self, Result};
+//use tl::parsing::{ConstructorId, Reader, Writer};
 
 //pub struct TLCtor<R: Reader>(pub fn(Option<ConstructorId>, &mut R) -> Result<Box<TLObject>>);
 //pub struct TLCtorMap<R: Reader>(pub HashMap<ConstructorId, TLCtor<R>>);
@@ -32,14 +36,24 @@ impl<R: Reader> Default for TLCtorMap<R> {
     }
 }*/
 
-pub trait TLObject: Any + tl::WriteType {
+/*pub trait TLObject: Any + tl::WriteType {
+    fn as_any(&self) -> &Any;
+    fn as_boxed_any(self: Box<Self>) -> Box<Any>;
+}*/
+
+pub trait TLObject: Any + Serialize {
     fn as_any(&self) -> &Any;
     fn as_boxed_any(self: Box<Self>) -> Box<Any>;
 }
 
-impl<T: Any + tl::WriteType> TLObject for T {
+/*impl<T: Any + tl::WriteType> TLObject for T {
     /*default*/ fn as_any(&self) -> &Any { self }
     /*default*/ fn as_boxed_any(self: Box<Self>) -> Box<Any> { self }
+}*/
+
+impl<T: Any + Serialize> TLObject for T {
+    fn as_any(&self) -> &Any { self }
+    fn as_boxed_any(self: Box<Self>) -> Box<Any> { self }
 }
 
 /*#[derive(Debug, Clone)]
@@ -72,37 +86,73 @@ impl Clone for Box<TLObject> {
     }
 }
 
-impl tl::IdentifiableType for Box<TLObject> {
+/*impl tl::IdentifiableType for Box<TLObject> {
     fn type_id(&self) -> Option<ConstructorId> {
         tl::IdentifiableType::type_id(&**self)
     }
-}
+}*/
 
-impl tl::WriteType for Box<TLObject> {
-    fn serialize(&self, writer: &mut Writer) -> Result<()> {
-        tl::WriteType::serialize(&**self, writer)
+impl Identifiable for Box<TLObject> {
+    fn type_id(&self) -> Option<i32> {
+        Identifiable::type_id(&**self)
     }
 }
 
-impl<'a> tl::IdentifiableType for &'a TLObject {
+/*impl tl::WriteType for Box<TLObject> {
+    fn serialize(&self, writer: &mut Writer) -> Result<()> {
+        tl::WriteType::serialize(&**self, writer)
+    }
+}*/
+
+impl Serialize for Box<TLObject> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        Serialize::serialize(&**self, serializer)
+    }
+}
+
+/*impl<'a> tl::IdentifiableType for &'a TLObject {
     fn type_id(&self) -> Option<ConstructorId> {
+        (*self).type_id()
+    }
+}*/
+
+impl<'a> Identifiable for &'a TLObject {
+    fn type_id(&self) -> Option<i32> {
         (*self).type_id()
     }
 }
 
-impl<'a> tl::WriteType for &'a TLObject {
+/*impl<'a> tl::WriteType for &'a TLObject {
     fn serialize(&self, writer: &mut Writer) -> Result<()> {
         (*self).serialize(writer)
     }
+}*/
+
+impl Serialize for Box<TLObject> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        (*self).serialize(serializer)
+    }
 }
 
-impl tl::ReadType for Box<TLObject> {
+/*impl tl::ReadType for Box<TLObject> {
     fn deserialize_bare<R: Reader>(_: Option<ConstructorId>, _: &mut R) -> Result<Self> {
         unimplemented!()
     }
 
     fn deserialize<R: Reader>(reader: &mut R) -> Result<Self> {
         reader.read_polymorphic()
+    }
+}*/
+
+impl<'de> Deserialize<'de> for Box<TLObject> {
+    fn deserialize<D>(deserializer: D) -> Result<Box<TLObject>, D::Error>
+        where D: Deserializer<'de>
+    {
+        unimplemented!()
     }
 }
 
@@ -122,11 +172,17 @@ impl fmt::Debug for TLObject {
     }
 }
 
-#[derive(Debug, Clone)]
+/*#[derive(Debug, Clone)]
 pub struct LengthAndObject(pub Box<TLObject>);
 
-impl tl::IdentifiableType for LengthAndObject {
+/*impl tl::IdentifiableType for LengthAndObject {
     fn type_id(&self) -> Option<ConstructorId> {
+        None
+    }
+}*/
+
+impl Identifiable for LengthAndObject {
+    fn type_id(&self) -> Option<i32> {
         None
     }
 }
@@ -167,6 +223,7 @@ impl From<Box<TLObject>> for LengthAndObject {
 //         }))
 //     }
 // }
+*/
 
 /*pub trait TLDynamic: TLObject {
     fn deserialize<R: Reader>(id: Option<ConstructorId>, reader: &mut R) -> Result<Box<TLObject>>;

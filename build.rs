@@ -21,7 +21,7 @@ fn main_result() -> Result<(), io::Error> {
     }
 
     let code = tl_codegen::generate_code_for(&input);
-    File::create(OUTPUT_FILE)?.write_all(code.as_bytes())?;
+    File::create(OUTPUT_FILE)?.write_all(code.as_str().as_bytes())?;
     Command::new("rustfmt")
         .arg("--write-mode")
         .arg("overwrite")

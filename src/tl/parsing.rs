@@ -3,6 +3,7 @@ use std::cmp::min;
 use std::io::{self, Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
+use error;
 //use tl::dynamic::{TLCtorMap, TLObject};
 use tl::dynamic::TLObject;
 use tl;
@@ -16,11 +17,11 @@ impl fmt::Debug for ConstructorId {
     }
 }
 
-pub trait Reader: Read {
-    fn read_tl<T: tl::ReadType>(&mut self) -> tl::Result<T>;
-    fn read_polymorphic(&mut self) -> tl::Result<Box<TLObject>>;
+/*pub trait Reader: Read {
+    fn read_tl<T: tl::ReadType>(&mut self) -> error::Result<T>;
+    fn read_polymorphic(&mut self) -> error::Result<Box<TLObject>>;
 
-    fn read_type_id(&mut self) -> tl::Result<ConstructorId> {
+    fn read_type_id(&mut self) -> error::Result<ConstructorId> {
         Ok(ConstructorId(self.read_u32::<LittleEndian>()?))
     }
 
@@ -41,7 +42,7 @@ pub trait Reader: Read {
 }
 
 pub trait Writer: Write {
-    fn write_tl(&mut self, value: &tl::WriteType) -> tl::Result<()>;
+    fn write_tl(&mut self, value: &tl::WriteType) -> error::Result<()>;
 
     fn aligned(self, alignment: usize) -> AlignedWriter<Self>
         where Self: Sized
@@ -94,11 +95,11 @@ pub struct AlignedWriter<W: Writer>{
 }
 
 impl<R: Read> Reader for ReadContext<R> {
-    fn read_tl<T: tl::ReadType>(&mut self) -> tl::Result<T> {
+    fn read_tl<T: tl::ReadType>(&mut self) -> error::Result<T> {
         T::deserialize(self)
     }
 
-    fn read_polymorphic(&mut self) -> tl::Result<Box<TLObject>> {
+    fn read_polymorphic(&mut self) -> error::Result<Box<TLObject>> {
         let id = self.read_type_id()?;
         let ctor = self.ctors.as_ref().unwrap().get(&id).0;
         ctor(Some(id), self)
@@ -112,11 +113,11 @@ impl<R: Read> Read for ReadContext<R> {
 }*/
 
 impl<'a, R: ?Sized + Reader> Reader for AlignedReader<'a, R> {
-    fn read_tl<T: tl::ReadType>(&mut self) -> tl::Result<T> {
+    fn read_tl<T: tl::ReadType>(&mut self) -> error::Result<T> {
         self.reader.read_tl()
     }
 
-    fn read_polymorphic(&mut self) -> tl::Result<Box<TLObject>> {
+    fn read_polymorphic(&mut self) -> error::Result<Box<TLObject>> {
         self.reader.read_polymorphic()
     }
 }
@@ -142,11 +143,11 @@ impl<'a, R: ?Sized + Reader> Drop for AlignedReader<'a, R> {
 }
 
 impl<'a, R: ?Sized + Reader> Reader for TakeReader<'a, R> {
-    fn read_tl<T: tl::ReadType>(&mut self) -> tl::Result<T> {
+    fn read_tl<T: tl::ReadType>(&mut self) -> error::Result<T> {
         self.reader.read_tl()
     }
 
-    fn read_polymorphic(&mut self) -> tl::Result<Box<TLObject>> {
+    fn read_polymorphic(&mut self) -> error::Result<Box<TLObject>> {
         self.reader.read_polymorphic()
     }
 }
@@ -173,7 +174,7 @@ impl<W: Write> WriteContext<W> {
 }
 
 impl<W: Write> Writer for WriteContext<W> {
-    fn write_tl(&mut self, value: &tl::WriteType) -> tl::Result<()> {
+    fn write_tl(&mut self, value: &tl::WriteType) -> error::Result<()> {
         if let Some(con_id) = value.type_id() {
             self.write_u32::<LittleEndian>(con_id.0)?;
         }
@@ -192,7 +193,7 @@ impl<W: Write> Write for WriteContext<W> {
 }
 
 impl<'a> Writer for &'a mut Writer {
-    fn write_tl(&mut self, value: &tl::WriteType) -> tl::Result<()> {
+    fn write_tl(&mut self, value: &tl::WriteType) -> error::Result<()> {
         (*self).write_tl(value)
     }
 }
@@ -218,4 +219,4 @@ impl<W: Writer> Drop for AlignedWriter<W> {
             self.write_all(&buf[..pad]).expect("couldn't pad");
         }
     }
-}
+}*/

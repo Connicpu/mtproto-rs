@@ -4,10 +4,8 @@ version = "0.1.0"
 authors = ["Connor Hilarides <connorcpu@live.com>"]
 
 [dependencies]
+error-chain = "0.11"
 pom = "1"
-
-syn = "*"
-synom = "*"
-quote = "*"
-
-[lib]
+quote = "0.3"
+syn = "0.11"
+synom = "0.11"
