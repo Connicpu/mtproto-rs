@@ -78,25 +78,126 @@ impl Type {
         }
     }
 
-    fn to_quoted(&self) -> error::Result<quote::Tokens> {
-        let quoted = match *self {
-            Type::Int => quote! { i32 },
-            Type::Named(ref v) => names_to_quoted(v, &[])?,
+    pub fn to_type_ir(&self) -> error::Result<TypeIr> {
+        let type_ir = match *self {
+            Type::Int => TypeIr::copyable(quote! { i32 }),
+            Type::Named(ref v) => names_to_type_ir(v, &[])?,
             Type::TypeParameter(ref s) => {
                 let resolved_ty_param = no_conflict_ident(s);
-                quote! { #resolved_ty_param }
+                TypeIr::noncopyable(quote! { #resolved_ty_param })
             },
             Type::Generic(ref container, ref ty) => {
                 // TODO: change this to support multiple type parameters
-                names_to_quoted(container, &[ty.to_quoted()?])?
+                names_to_type_ir(container, &[ty.to_type_ir()?])?
             },
             Type::Flagged(_, _, ref ty) => {
-                ty.to_quoted()?
+                ty.to_type_ir()?
             },
             Type::Repeated(..) => unimplemented!(), // FIXME
         };
 
-        Ok(quoted)
+        Ok(type_ir)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct TypeIr {
+    pub(crate) tokens: quote::Tokens,
+    pub(crate) with_option: bool,
+    pub(crate) type_ir_kind: TypeIrKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TypeIrKind {
+    Copyable,
+    NonCopyable,
+    NeedsBox,
+    Unit,
+}
+
+impl TypeIr {
+    pub fn copyable(tokens: quote::Tokens) -> TypeIr {
+        TypeIr {
+            tokens: tokens,
+            with_option: false,
+            type_ir_kind: TypeIrKind::Copyable,
+        }
+    }
+
+    pub fn noncopyable(tokens: quote::Tokens) -> TypeIr {
+        TypeIr {
+            tokens: tokens,
+            with_option: false,
+            type_ir_kind: TypeIrKind::NonCopyable,
+        }
+    }
+
+    pub fn needs_box(tokens: quote::Tokens) -> TypeIr {
+        TypeIr {
+            tokens: tokens,
+            with_option: false,
+            type_ir_kind: TypeIrKind::NeedsBox,
+        }
+    }
+
+    pub fn unit() -> TypeIr {
+        TypeIr {
+            tokens: quote! { () },
+            with_option: false,
+            type_ir_kind: TypeIrKind::Unit,
+        }
+    }
+
+    fn impl_unboxed(self) -> quote::Tokens {
+        self.tokens
+    }
+
+    fn impl_boxed(self) -> quote::Tokens {
+        if self.type_ir_kind == TypeIrKind::NeedsBox {
+            let tokens = self.tokens;
+            quote! { Box<#tokens> }
+        } else {
+            self.tokens
+        }
+    }
+
+    fn impl_ref_type(self) -> quote::Tokens {
+        let needs_ref = self.type_ir_kind != TypeIrKind::Copyable;
+        let quoted = self.impl_boxed();
+
+        if needs_ref {
+            quote! { &#quoted }
+        } else {
+            quoted
+        }
+    }
+
+    pub fn needs_option(&self) -> bool {
+        self.with_option && self.type_ir_kind != TypeIrKind::Unit
+    }
+
+    pub fn unboxed(self) -> quote::Tokens {
+        wrap_option_type(self.needs_option(), self.impl_unboxed())
+    }
+
+    pub fn boxed(self) -> quote::Tokens {
+        wrap_option_type(self.needs_option(), self.impl_boxed())
+    }
+
+    pub fn ref_type(self) -> quote::Tokens {
+        wrap_option_type(self.needs_option(), self.impl_ref_type())
+    }
+
+    pub fn ref_prefix(&self) -> quote::Tokens {
+        if self.type_ir_kind == TypeIrKind::Copyable { quote! {} } else { quote! { ref } }
+    }
+
+    pub fn reference_prefix(&self) -> quote::Tokens {
+        if self.type_ir_kind == TypeIrKind::Copyable { quote! {} } else { quote! { & } }
+    }
+
+    pub fn local_reference_prefix(&self) -> quote::Tokens {
+        if self.type_ir_kind == TypeIrKind::Copyable { quote! { & } } else { quote! {} }
     }
 }
 
@@ -108,7 +209,7 @@ pub struct Field {
 
 impl Field {
     fn to_quoted(&self) -> error::Result<quote::Tokens> {
-        let ty = self.ty.to_quoted()?;
+        let ty = self.ty.to_type_ir()?.boxed();
 
         let field_quoted = match self.name {
             Some(ref name) => {
@@ -145,11 +246,24 @@ impl Constructor {
     }
 
     fn fixup_output(&mut self) {
-        //if self.is_output_a_type_parameter() {
-            // FIXME
-        //}
+        let is_output_a_type_parameter = |constructor: &Constructor| {
+            let output_name = match constructor.output {
+                Type::Named(ref v) if v.len() == 1 => v[0].as_str(),
+                _ => return false,
+            };
 
-        unimplemented!()
+            for p in &constructor.type_parameters {
+                if p.name.as_ref().map(String::as_str) == Some(output_name) {
+                    return true;
+                }
+            }
+
+            false
+        };
+
+        if is_output_a_type_parameter(self) {
+            self.output = Type::TypeParameter(self.output.name().unwrap().into()) // FIXME
+        }
     }
 
     fn fixup_fields(&mut self, fixup_map: &TypeFixupMap) {
@@ -198,7 +312,7 @@ impl Constructor {
             .collect()
     }
 
-    fn non_flag_fields<'a>(&'a self) -> Box<Iterator<Item = &'a Field> + 'a> {
+    pub fn non_flag_fields<'a>(&'a self) -> Box<Iterator<Item = &'a Field> + 'a> {
         let flag_fields = self.flag_field_names();
 
         Box::new({
@@ -258,17 +372,16 @@ impl Constructor {
         let generics = self.generics();
         let fields = self.fields_tokens()?;
 
-        let mut derives = vec!["Debug", "Clone", "Serialize", "Deserialize"];
+        let mut derives = vec!["Debug", "Clone", "Serialize", "Deserialize", "MtProtoSized"];
         let mut id_attr = None;
 
         if let Some(tl_id) = self.tl_id {
-            let id_formatted = "0x{:08x}";
+            let id_formatted = format!("0x{:08x}", tl_id);
 
-            derives.push("Identifiable");
+            derives.push("MtProtoIdentifiable");
             id_attr = Some(quote! { #[id = #id_formatted] })
         }
 
-        // FIXME: add MtProtoIdentifiable and MtProtoSized derives
         let quoted = quote! {
             #[derive(#(#derives),*)]
             #id_attr
@@ -280,14 +393,59 @@ impl Constructor {
 
     // FIXME: fill in methods
 
-    fn variant_name(&self) -> syn::Ident {
+    pub fn variant_name(&self) -> syn::Ident {
         self.variant.name().map(no_conflict_ident).unwrap() // FIXME: .unwrap()
     }
+
+    pub fn to_variant_quoted(&self) -> quote::Tokens {
+        let variant_name = self.variant_name();
+
+        if self.fields.is_empty() {
+            quote! { #variant_name }
+        } else {
+            quote! { #variant_name(#variant_name) }
+        }
+    }
+
+    pub fn to_variant_type_struct_quoted(&self) -> error::Result<quote::Tokens> {
+        if self.fields.is_empty() {
+            Ok(quote! {})
+        } else {
+            self.to_type_struct_base_quoted(self.variant_name())
+        }
+    }
+
+    fn to_type_struct_base_quoted(&self, name: syn::Ident) -> error::Result<quote::Tokens> {
+        self.to_struct_quoted(&name)
+    }
+
+    pub fn to_single_type_struct_quoted(&self) -> error::Result<quote::Tokens> {
+        let name = self.output.name().map(no_conflict_ident).unwrap(); // FIXME
+        self.to_type_struct_base_quoted(name)
+    }
+
+    /*fn to_variant_def_destructure(&self, name: &syn::Ident) -> Option<quote::Tokens> {
+        if self.fields.is_empty() {
+            return None;
+        }
+
+        let fields = self.non_flag_fields()
+            .map(|f| {
+                let prefix = f.ty.to_type_ir()?.ref_prefix();
+                let name = no_conflict_ident(f.name.as_ref().unwrap()); // FIXME
+                quote! { #prefix #name }
+            })
+            .collect::<error::Result<Vec<_>>>()?;
+
+        Some(quote! {
+            #name { #( #fields ),* }
+        })
+    }*/
 
     fn tl_id(&self) -> Option<quote::Tokens> {
         self.tl_id.as_ref().map(|tl_id| {
             let id: syn::Ident = format!("0x{:08x}", tl_id).into();
-            quote! { #tl_id }
+            quote! { #id }
         })
     }
 }
@@ -306,7 +464,23 @@ pub enum Item {
 }
 
 
-fn no_conflict_ident(s: &str) -> syn::Ident {
+pub fn wrap_option_type(wrap: bool, ty: quote::Tokens) -> quote::Tokens {
+    if wrap {
+        quote! { Option<#ty> }
+    } else {
+        ty
+    }
+}
+
+pub fn wrap_option_value(wrap: bool, ty: quote::Tokens) -> quote::Tokens {
+    if wrap {
+        quote! { Some(#ty) }
+    } else {
+        ty
+    }
+}
+
+pub fn no_conflict_ident(s: &str) -> syn::Ident {
     let mut candidate: String = s.into();
 
     loop {
@@ -317,7 +491,7 @@ fn no_conflict_ident(s: &str) -> syn::Ident {
     }
 }
 
-fn names_to_quoted(names: &[String], type_parameters: &[quote::Tokens]) -> error::Result<quote::Tokens> {
+fn names_to_type_ir(names: &[String], type_parameters: &[TypeIr]) -> error::Result<TypeIr> {
     if names.len() == 1 {
         let get_ty_param = || -> error::Result<_> {
             if type_parameters.len() != 1 {
@@ -328,47 +502,48 @@ fn names_to_quoted(names: &[String], type_parameters: &[quote::Tokens]) -> error
         };
 
         let handle_simple_types = || -> error::Result<_> {
-            let ty = match names[0].as_str() {
-                "Bool"   => quote! { bool },
-                "true"   => quote! { bool },
-                "int"    => quote! { i32 },
-                "long"   => quote! { i64 },
-                "int128" => quote! { ::extprim::i128::i128 },
-                "int256" => quote! { (::extprim::i128::i128, ::extprim::i128::i128) },
-                "double" => quote! { f64 },
-                "bytes"  => quote! { ::serde_bytes::ByteBuf },
-                "string" => quote! { String },
+            let type_ir = match names[0].as_str() {
+                "Bool"   => TypeIr::copyable(quote! { bool }),
+                "true"   => TypeIr::unit(),
+                "int"    => TypeIr::copyable(quote! { i32 }),
+                "long"   => TypeIr::copyable(quote! { i64 }),
+                "int128" => TypeIr::copyable(quote! { ::extprim::i128::i128 }),
+                "int256" => TypeIr::copyable(quote! { (::extprim::i128::i128, ::extprim::i128::i128) }),
+                "double" => TypeIr::copyable(quote! { f64 }),
+                "bytes"  => TypeIr::noncopyable(quote! { ::serde_bytes::ByteBuf }),
+                "string" => TypeIr::noncopyable(quote! { String }),
                 "vector" => {
-                    let ty_param = get_ty_param()?;
-                    quote! { Vec<#ty_param> }
+                    let ty_param = get_ty_param()?.clone().unboxed();
+                    TypeIr::noncopyable(quote! { Vec<#ty_param> })
                 },
                 "Vector" => {
-                    let ty_param = get_ty_param()?;
-                    quote! { Boxed<Vec<#ty_param>> }
+                    let ty_param = get_ty_param()?.clone().unboxed();
+                    TypeIr::noncopyable(quote! { Boxed<Vec<#ty_param>> })
                 },
                 _ => return Ok(None),
             };
 
-            Ok(Some(ty))
+            Ok(Some(type_ir))
         };
 
         match handle_simple_types()? {
-            Some(ty) => return Ok(ty),
-            None => (),
+            Some(type_ir) => return Ok(type_ir),
+            None          => (),
         }
     }
 
     let ty = if type_parameters.len() == 0 {
         quote! { ::schema #(::#names)* }
     } else {
-        quote! { ::schema #(::#names)* <#(#type_parameters),*> }
+        let ty_params = type_parameters.into_iter().map(|ty_ir| ty_ir.clone().unboxed());
+        quote! { ::schema #(::#names)* <#(#ty_params),*> }
     };
 
     // Special case two recursive types.
     let ty = match names.last().map(String::as_str) {
         Some("PageBlock") |
-        Some("RichText") => quote! { Box<#ty> },
-        _ => ty,
+        Some("RichText") => TypeIr::needs_box(ty),
+        _ => TypeIr::noncopyable(ty),
     };
 
     Ok(ty)
