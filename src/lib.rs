@@ -9,11 +9,12 @@ extern crate extprim;
 extern crate openssl;
 extern crate rand;
 extern crate serde;
+extern crate serde_bytes;
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_mtproto;
-//#[macro_use]
-//extern crate serde_mtproto_derive;
+#[macro_use]
+extern crate serde_mtproto_derive;
 
 /*pub mod error {
     error_chain! {

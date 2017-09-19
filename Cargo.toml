@@ -13,6 +13,7 @@ extprim = "1.4.0"
 openssl = "0.9.17"
 rand = "0.3"
 serde = "1.0"
+serde_bytes = "0.10"
 serde_derive = "1.0"
 serde_mtproto = { git = "https://github.com/hcpl/serde_mtproto" }
 serde_mtproto_derive = { git = "https://github.com/hcpl/serde_mtproto" }

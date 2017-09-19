@@ -10,16 +10,34 @@ use parser;
 
 
 pub fn generate_code_for(input: &str) -> quote::Tokens {
+    let items = generate_items_for(input);
+
+    quote! {
+        #( #items )*
+    }
+}
+
+pub fn generate_items_for(input: &str) -> Vec<syn::Item> {
     let constructors = {
         let mut items = parser::parse_string(input).unwrap();
         filter_items(&mut items);
         partition_by_delimiter_and_namespace(items)
     };
 
-    let layer = constructors.layer as i32;
-    let mut items = vec![quote! {
-        pub const LAYER: i32 = #layer;
-    }];
+    let mut items = vec![
+        syn::Item {
+            ident: syn::Ident::new("LAYER"),
+            vis: syn::Visibility::Public,
+            attrs: vec![],
+            node: syn::ItemKind::Const(
+                Box::new(syn::parse_type("i32").unwrap()),
+                Box::new(syn::Expr {
+                    node: syn::ExprKind::Lit(syn::Lit::Int(constructors.layer as u64, syn::IntTy::Unsuffixed)),
+                    attrs: vec![],
+                })
+            ),
+        }
+    ];
 
     let variants_to_outputs: TypeFixupMap = constructors.types.iter()
         .flat_map(|(namespaces, constructor_map)| {
@@ -41,26 +59,38 @@ pub fn generate_code_for(input: &str) -> quote::Tokens {
 
     for (namespaces, mut constructor_map) in constructors.types {
         let substructs = constructor_map.values_mut()
-            .map(|mut c| {
+            .flat_map(|mut c| {
                 c.fixup(Delimiter::Functions, &variants_to_outputs);
-                c.to_data_type_quoted().unwrap() // FIXME
+                //c.to_data_type_quoted().unwrap() // FIXME
+                c.to_syn_data_type_items().unwrap() // FIXME
             });
 
-        let mut quoted = quote! { #(#substructs)* };
-        for namespace in namespaces.into_iter().rev() {
-            quoted = quote! {
-                pub mod #namespace {
-                    #quoted
-                }
+        if namespaces.is_empty() {
+            items.extend(substructs);
+        } else {
+            let mut namespaces_rev_iter = namespaces.into_iter().rev();
+
+            let mut syn_mod = syn::Item {
+                ident: syn::Ident::new(namespaces_rev_iter.next().unwrap()),
+                vis: syn::Visibility::Public,
+                attrs: vec![],
+                node: syn::ItemKind::Mod(Some(substructs.collect())),
             };
+
+            for namespace in namespaces_rev_iter {
+                syn_mod = syn::Item {
+                    ident: syn::Ident::new(namespace),
+                    vis: syn::Visibility::Public,
+                    attrs: vec![],
+                    node: syn::ItemKind::Mod(Some(vec![syn_mod])),
+                };
+            }
+
+            items.push(syn_mod);
         }
-
-        items.push(quoted);
     }
 
-    quote! {
-        #(#items)*
-    }
+    items
 }
 
 fn filter_items(items: &mut Vec<Item>) {
@@ -131,34 +161,54 @@ impl Constructors {
         }
     }
 
-    fn to_data_type_quoted(&self) -> error::Result<quote::Tokens> {
+    fn to_syn_data_type_items(&self) -> error::Result<Vec<syn::Item>> {
         if self.0.len() == 1 {
-            return self.0[0].to_single_type_struct_quoted();
+            return self.0[0].to_syn_single_type_struct().map(|s| vec![s]);
         }
 
         assert!(self.0.len() >= 2); // FIXME: return errors instead of assert
 
         let name = self.0[0].output.name().map(no_conflict_ident).unwrap(); // FIXME
-        let variants = self.0.iter().map(Constructor::to_variant_quoted);
+        let variants = self.0.iter().map(Constructor::to_syn_variant).collect();
         let methods = self.determine_methods(&name)?;
         let structs = self.0.iter()
-            .map(Constructor::to_variant_type_struct_quoted)
-            .collect::<error::Result<Vec<_>>>()?;
+            .map(Constructor::to_syn_variant_type_struct)
+            .collect::<error::Result<Vec<_>>>()?
+            .into_iter()
+            .filter_map(|maybe_struct| maybe_struct);
 
-        let data_type_quoted = quote! {
-            #[derive(Debug, Clone)]
-            pub enum #name {
-                #( #variants, )*
-            }
-
-            #methods
-            #( #structs )*
+        let syn_enum = syn::Item {
+            ident: name,
+            vis: syn::Visibility::Public,
+            attrs: vec![
+                // Docs for syn 0.11.11 contain a bug: we need outer for #[..], not inner
+                syn::parse_outer_attr("#[derive(Clone, Debug)]").unwrap(),
+            ],
+            // FIXME: in general case, generics can be present!
+            node: syn::ItemKind::Enum(variants, syn::Generics {
+                lifetimes: vec![],
+                ty_params: vec![],
+                where_clause: syn::WhereClause {
+                    predicates: vec![],
+                },
+            }),
         };
 
-        Ok(data_type_quoted)
+        let syn_data_type_items = {
+            // methods.len() == structs.len() == self.0.len()
+            let mut v = Vec::with_capacity(1 + self.0.len() * 2);
+
+            v.push(syn_enum);
+            v.extend(methods);
+            v.extend(structs);
+
+            v
+        };
+
+        Ok(syn_data_type_items)
     }
 
-    fn determine_methods(&self, enum_name: &syn::Ident) -> error::Result<quote::Tokens> {
+    fn determine_methods(&self, enum_name: &syn::Ident) -> error::Result<Option<syn::Item>> {
         let all_constructors_count = self.0.len();
         let mut methods = vec![];
 
@@ -184,51 +234,191 @@ impl Constructors {
             }
 
             let force_option = !exhaustive && type_ir.type_ir_kind == TypeIrKind::Unit;
+            let method_call = {
+                let ident = syn::Expr {
+                    node: syn::ExprKind::Path(None, syn::Path {
+                        global: false,
+                        segments: vec![
+                            syn::PathSegment {
+                                ident: syn::Ident::new("x"),
+                                parameters: syn::PathParameters::none(),
+                            },
+                        ],
+                    }),
+                    attrs: vec![],
+                };
+
+                syn::Expr {
+                    node: syn::ExprKind::MethodCall(method_name.clone(), vec![], vec![ident]),
+                    attrs: vec![],
+                }
+            };
+
             let value = if field_is_option && type_ir.type_ir_kind != TypeIrKind::Copyable {
-                quote! { x.#method_name.as_ref() }
+                syn::Expr {
+                    node: syn::ExprKind::MethodCall(syn::Ident::new("as_ref"), vec![], vec![method_call]),
+                    attrs: vec![],
+                }
             } else {
-                let ref_ = type_ir.reference_prefix();
                 let wrap = (type_ir.needs_option() && !field_is_option) || force_option;
-                wrap_option_value(wrap, quote! { #ref_ x.#method_name })
+                wrap_option_value(wrap, method_call)
             };
 
             let ty = wrap_option_type(force_option, type_ir.ref_type());
-            let constructors = constructors.into_iter()
+            let mut constructors_match_arms: Vec<syn::Arm> = constructors.into_iter()
                 .map(|c| {
-                    let constructor_name = c.variant_name();
-
-                    quote! {
-                        #enum_name::#constructor_name(ref x) => #value
+                    syn::Arm {
+                        attrs: vec![],
+                        pats: vec![
+                            syn::Pat::TupleStruct(
+                                syn::Path {
+                                    global: false,
+                                    segments: vec![
+                                        syn::PathSegment {
+                                            ident: enum_name.clone(),
+                                            parameters: syn::PathParameters::none(),
+                                        },
+                                        syn::PathSegment {
+                                            ident: c.variant_name(),
+                                            parameters: syn::PathParameters::none(),
+                                        },
+                                    ],
+                                },
+                                vec![
+                                    syn::Pat::Ident(
+                                        syn::BindingMode::ByRef(syn::Mutability::Immutable),
+                                        syn::Ident::new("x"),
+                                        None,
+                                    ),
+                                ],
+                                None,
+                            ),
+                        ],
+                        guard: None,
+                        body: Box::new(value.clone()),
                     }
-                });
+                })
+                .collect();
 
-            let trailer_non_exhaustive = if exhaustive {
-                None
-            } else {
-                Some(quote! { _ => None })
+            if !exhaustive {
+                let arm_ignore = syn::Arm {
+                    attrs: vec![],
+                    pats: vec![syn::Pat::Wild],
+                    guard: None,
+                    body: Box::new(syn::Expr {
+                        node: syn::ExprKind::Path(None, syn::Path {
+                            global: false,
+                            segments: vec![
+                                syn::PathSegment {
+                                    ident: syn::Ident::new("None"),
+                                    parameters: syn::PathParameters::none(),
+                                },
+                            ],
+                        }),
+                        attrs: vec![],
+                    }),
+                };
+
+                constructors_match_arms.push(arm_ignore);
+            }
+
+            let method = syn::ImplItem {
+                ident: method_name,
+                vis: syn::Visibility::Public,
+                defaultness: syn::Defaultness::Final,
+                attrs: vec![],
+                node: syn::ImplItemKind::Method(
+                    syn::MethodSig {
+                        unsafety: syn::Unsafety::Normal,
+                        constness: syn::Constness::NotConst,
+                        abi: None,
+                        decl: syn::FnDecl {
+                            inputs: vec![
+                                syn::FnArg::SelfRef(None, syn::Mutability::Immutable),
+                            ],
+                            output: syn::FunctionRetTy::Ty(ty),
+                            variadic: false,
+                        },
+                        generics: syn::Generics {
+                            lifetimes: vec![],
+                            ty_params: vec![],
+                            where_clause: syn::WhereClause {
+                                predicates: vec![],
+                            },
+                        },
+                    },
+                    syn::Block {
+                        stmts: vec![
+                            syn::Stmt::Expr(Box::new(syn::Expr {
+                                node: syn::ExprKind::Match(
+                                    Box::new(syn::Expr {
+                                        node: syn::ExprKind::Unary(
+                                            syn::UnOp::Deref,
+                                            Box::new(syn::Expr {
+                                                node: syn::ExprKind::Path(
+                                                    None,
+                                                    syn::Path {
+                                                        global: false,
+                                                        segments: vec![
+                                                            syn::PathSegment {
+                                                                ident: syn::Ident::new("self"),
+                                                                parameters: syn::PathParameters::none(),
+                                                            },
+                                                        ],
+                                                    },
+                                                ),
+                                                attrs: vec![],
+                                            }),
+                                        ),
+                                        attrs: vec![],
+                                    }),
+                                    constructors_match_arms,
+                                ),
+                                attrs: vec![],
+                            })),
+                        ],
+                    },
+                ),
             };
 
-            methods.push(quote! {
-                pub fn #method_name(&self) -> #ty {
-                    match *self {
-                        #( #constructors, )*
-                        #trailer_non_exhaustive
-                    }
-                }
-            });
+            methods.push(method);
         }
 
-        let methods_tokens = if methods.is_empty() {
-            quote! {}
+        let maybe_item = if methods.is_empty() {
+            None
         } else {
-            quote! {
-                impl #enum_name {
-                    #( #methods )*
-                }
-            }
+            let item = syn::Item {
+                ident: enum_name.clone(),
+                vis: syn::Visibility::Inherited,
+                attrs: vec![],
+                node: syn::ItemKind::Impl(
+                    syn::Unsafety::Normal,
+                    syn::ImplPolarity::Positive,
+                    syn::Generics {
+                        lifetimes: vec![],
+                        ty_params: vec![],
+                        where_clause: syn::WhereClause {
+                            predicates: vec![],
+                        }
+                    },
+                    None,
+                    Box::new(syn::Ty::Path(None, syn::Path {
+                        global: false,
+                        segments: vec![
+                            syn::PathSegment {
+                                ident: enum_name.clone(),
+                                parameters: syn::PathParameters::none(),
+                            },
+                        ],
+                    })),
+                    methods,
+                ),
+            };
+
+            Some(item)
         };
 
-        Ok(methods_tokens)
+        Ok(maybe_item)
     }
 
     fn coalesce_methods(&self) -> BTreeMap<&str, BTreeMap<&Type, BTreeSet<&Constructor>>> {

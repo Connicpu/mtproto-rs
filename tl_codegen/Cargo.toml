@@ -7,5 +7,5 @@ authors = ["Connor Hilarides <connorcpu@live.com>"]
 error-chain = "0.11"
 pom = "1"
 quote = "0.3"
-syn = "0.11"
+syn = { version = "0.11", features = ["full"] }
 synom = "0.11"

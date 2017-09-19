@@ -12,5 +12,4 @@ mod error;
 mod generator;
 mod parser;
 
-//use ast::{Constructor, Delimiter, Field, Item, Type};
 pub use generator::generate_code_for;
