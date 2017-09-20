@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use quote;
 use syn;
 
-use ast::{Constructor, Delimiter, Item, Type, TypeFixupMap, TypeIr, TypeIrKind,
+use ast::{Constructor, Delimiter, Item, Type, TypeFixupMap, TypeIrKind,
           no_conflict_ident, wrap_option_type, wrap_option_value};
 use error;
 use parser;
@@ -30,7 +30,7 @@ pub fn generate_items_for(input: &str) -> Vec<syn::Item> {
             vis: syn::Visibility::Public,
             attrs: vec![],
             node: syn::ItemKind::Const(
-                Box::new(syn::parse_type("i32").unwrap()),
+                Box::new(syn::Ty::Path(None, "i32".into())),
                 Box::new(syn::Expr {
                     node: syn::ExprKind::Lit(syn::Lit::Int(constructors.layer as u64, syn::IntTy::Unsuffixed)),
                     attrs: vec![],
@@ -339,43 +339,20 @@ impl Constructors {
                             output: syn::FunctionRetTy::Ty(ty),
                             variadic: false,
                         },
-                        generics: syn::Generics {
-                            lifetimes: vec![],
-                            ty_params: vec![],
-                            where_clause: syn::WhereClause {
-                                predicates: vec![],
-                            },
-                        },
+                        generics: Default::default(),
                     },
                     syn::Block {
                         stmts: vec![
-                            syn::Stmt::Expr(Box::new(syn::Expr {
-                                node: syn::ExprKind::Match(
-                                    Box::new(syn::Expr {
-                                        node: syn::ExprKind::Unary(
-                                            syn::UnOp::Deref,
-                                            Box::new(syn::Expr {
-                                                node: syn::ExprKind::Path(
-                                                    None,
-                                                    syn::Path {
-                                                        global: false,
-                                                        segments: vec![
-                                                            syn::PathSegment {
-                                                                ident: syn::Ident::new("self"),
-                                                                parameters: syn::PathParameters::none(),
-                                                            },
-                                                        ],
-                                                    },
-                                                ),
-                                                attrs: vec![],
-                                            }),
-                                        ),
-                                        attrs: vec![],
-                                    }),
-                                    constructors_match_arms,
-                                ),
-                                attrs: vec![],
-                            })),
+                            syn::Stmt::Expr(Box::new(syn::ExprKind::Match(
+                                Box::new(syn::ExprKind::Unary(
+                                    syn::UnOp::Deref,
+                                    Box::new(syn::ExprKind::Path(
+                                        None,
+                                        "self".into(),
+                                    ).into()),
+                                ).into()),
+                                constructors_match_arms,
+                            ).into())),
                         ],
                     },
                 ),
@@ -394,23 +371,9 @@ impl Constructors {
                 node: syn::ItemKind::Impl(
                     syn::Unsafety::Normal,
                     syn::ImplPolarity::Positive,
-                    syn::Generics {
-                        lifetimes: vec![],
-                        ty_params: vec![],
-                        where_clause: syn::WhereClause {
-                            predicates: vec![],
-                        }
-                    },
+                    syn::Generics::default(),
                     None,
-                    Box::new(syn::Ty::Path(None, syn::Path {
-                        global: false,
-                        segments: vec![
-                            syn::PathSegment {
-                                ident: enum_name.clone(),
-                                parameters: syn::PathParameters::none(),
-                            },
-                        ],
-                    })),
+                    Box::new(syn::Ty::Path(None, enum_name.clone().into())),
                     methods,
                 ),
             };

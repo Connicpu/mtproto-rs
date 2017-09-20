@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashSet};
+use std::iter;
 
 use syn;
 use synom;
@@ -80,30 +81,12 @@ impl Type {
     pub fn to_type_ir(&self) -> error::Result<TypeIr> {
         let type_ir = match *self {
             Type::Int => {
-                let ty = syn::Ty::Path(None, syn::Path {
-                    global: false,
-                    segments: vec![
-                        syn::PathSegment {
-                            ident: syn::Ident::new("i32"),
-                            parameters: syn::PathParameters::none(),
-                        }
-                    ],
-                });
-
+                let ty = syn::Ty::Path(None, "i32".into());
                 TypeIr::copyable(ty)
             },
             Type::Named(ref v) => names_to_type_ir(v, &[])?,
             Type::TypeParameter(ref s) => {
-                let ty = syn::Ty::Path(None, syn::Path {
-                    global: false,
-                    segments: vec![
-                        syn::PathSegment {
-                            ident: syn::Ident::new(no_conflict_ident(s)),
-                            parameters: syn::PathParameters::none(),
-                        }
-                    ],
-                });
-
+                let ty = syn::Ty::Path(None, no_conflict_ident(s).into());
                 TypeIr::noncopyable(ty)
             },
             Type::Generic(ref container, ref ty) => {
@@ -174,19 +157,13 @@ impl TypeIr {
 
     fn impl_boxed(self) -> syn::Ty {
         if self.type_ir_kind == TypeIrKind::NeedsBox {
-            syn::Ty::Path(None, syn::Path {
-                global: false,
-                segments: vec![
-                    syn::PathSegment {
-                        ident: syn::Ident::new("Box"),
-                        parameters: syn::PathParameters::AngleBracketed(syn::AngleBracketedParameterData {
-                            lifetimes: vec![],
-                            types: vec![self.ty],
-                            bindings: vec![],
-                        }),
-                    },
-                ],
-            })
+            let mut path: syn::Path = "Box".into();
+            match path.segments[0].parameters {
+                syn::PathParameters::AngleBracketed(ref mut data) => data.types.push(self.ty),
+                _ => unreachable!(),
+            }
+
+            syn::Ty::Path(None, path)
         } else {
             self.ty
         }
@@ -361,15 +338,7 @@ impl Constructor {
     }
 
     fn variant_match_pattern_fields_ignored(&self) -> syn::Pat {
-        let path = syn::Path {
-            global: false,
-            segments: vec![
-                syn::PathSegment {
-                    ident: syn::Ident::new(self.variant_name()),
-                    parameters: syn::PathParameters::none(),
-                }
-            ],
-        };
+        let path = self.variant_name().into();
 
         syn::Pat::TupleStruct(path, vec![], Some(0))
     }
@@ -387,9 +356,7 @@ impl Constructor {
         syn::Generics {
             lifetimes: vec![],
             ty_params: ty_params,
-            where_clause: syn::WhereClause {
-                predicates: vec![],
-            },
+            where_clause: Default::default(),
         }
     }
 
@@ -410,6 +377,7 @@ impl Constructor {
         if let Some(tl_id) = self.tl_id {
             derives.push("MtProtoIdentifiable");
             id_attr = Some(syn::Attribute {
+                // Docs for syn 0.11.11 contain a bug: we need Outer for #[..], not Inner
                 style: syn::AttrStyle::Outer,
                 value: syn::MetaItem::NameValue(
                     syn::Ident::new("id"),
@@ -420,6 +388,7 @@ impl Constructor {
         }
 
         let derive_attr = syn::Attribute {
+            // Docs for syn 0.11.11 contain a bug: we need Outer for #[..], not Inner
             style: syn::AttrStyle::Outer,
             value: syn::MetaItem::List(
                 syn::Ident::new("derive"),
@@ -463,15 +432,7 @@ impl Constructor {
                     ident: None,
                     vis: syn::Visibility::Inherited,
                     attrs: vec![],
-                    ty: syn::Ty::Path(None, syn::Path {
-                        global: false,
-                        segments: vec![
-                            syn::PathSegment {
-                                ident: syn::Ident::new(variant_name.clone()),
-                                parameters: syn::PathParameters::none(),
-                            }
-                        ],
-                    }),
+                    ty: syn::Ty::Path(None, variant_name.clone().into()),
                 }
             ])
         };
@@ -543,19 +504,13 @@ pub enum Item {
 
 pub fn wrap_option_type(wrap: bool, ty: syn::Ty) -> syn::Ty {
     if wrap {
-        syn::Ty::Path(None, syn::Path {
-            global: false,
-            segments: vec![
-                syn::PathSegment {
-                    ident: syn::Ident::new("Option"),
-                    parameters: syn::PathParameters::AngleBracketed(syn::AngleBracketedParameterData {
-                        lifetimes: vec![],
-                        types: vec![ty],
-                        bindings: vec![],
-                    }),
-                },
-            ],
-        })
+        let mut path: syn::Path = "Option".into();
+        match path.segments[0].parameters {
+            syn::PathParameters::AngleBracketed(ref mut data) => data.types.push(ty),
+            _ => unreachable!(),
+        }
+
+        syn::Ty::Path(None, path)
     } else {
         ty
     }
@@ -563,24 +518,10 @@ pub fn wrap_option_type(wrap: bool, ty: syn::Ty) -> syn::Ty {
 
 pub fn wrap_option_value(wrap: bool, value: syn::Expr) -> syn::Expr {
     if wrap {
-        syn::Expr {
-            node: syn::ExprKind::Call(
-                Box::new(syn::Expr {
-                    node: syn::ExprKind::Path(None, syn::Path {
-                        global: false,
-                        segments: vec![
-                            syn::PathSegment {
-                                ident: syn::Ident::new("Some"),
-                                parameters: syn::PathParameters::none(),
-                            },
-                        ],
-                    }),
-                    attrs: vec![],
-                }),
-                vec![value],
-            ),
-            attrs: vec![],
-        }
+        syn::ExprKind::Call(
+            Box::new(syn::ExprKind::Path(None, "Some".into()).into()),
+            vec![value],
+        ).into()
     } else {
         value
     }
@@ -609,22 +550,36 @@ fn names_to_type_ir(names: &[String], type_parameters: &[TypeIr]) -> error::Resu
 
         let handle_simple_types = || -> error::Result<_> {
             let type_ir = match names[0].as_str() {
-                "Bool"   => TypeIr::copyable(syn::parse_type(quote! { bool }.as_str()).unwrap()),
+                "Bool"   => TypeIr::copyable(syn::Ty::Path(None, "bool".into())),
                 "true"   => TypeIr::unit(),
-                "int"    => TypeIr::copyable(syn::parse_type(quote! { i32 }.as_str()).unwrap()),
-                "long"   => TypeIr::copyable(syn::parse_type(quote! { i64 }.as_str()).unwrap()),
-                "int128" => TypeIr::copyable(syn::parse_type(quote! { ::extprim::i128::i128 }.as_str()).unwrap()),
-                "int256" => TypeIr::copyable(syn::parse_type(quote! { (::extprim::i128::i128, ::extprim::i128::i128) }.as_str()).unwrap()),
-                "double" => TypeIr::copyable(syn::parse_type(quote! { f64 }.as_str()).unwrap()),
-                "bytes"  => TypeIr::noncopyable(syn::parse_type(quote! { ::serde_bytes::ByteBuf }.as_str()).unwrap()),
-                "string" => TypeIr::noncopyable(syn::parse_type(quote! { String }.as_str()).unwrap()),
+
+                "int"    => TypeIr::copyable(syn::Ty::Path(None, "i32".into())),
+                "long"   => TypeIr::copyable(syn::Ty::Path(None, "i64".into())),
+                "int128" => {
+                    let ty128 = syn_type_from_components(true, vec!["extprim", "i128", "i128"], vec![]);
+                    TypeIr::copyable(ty128)
+                },
+                "int236" => {
+                    let ty128 = syn_type_from_components(true, vec!["extprim", "i128", "i128"], vec![]);
+                    let ty256 = syn::Ty::Tup(vec![ty128.clone(), ty128]);
+                    TypeIr::copyable(ty256)
+                },
+                "double" => TypeIr::copyable(syn::Ty::Path(None, "f64".into())),
+                "bytes" => {
+                    let bytes_ty = syn_type_from_components(true, vec!["serde_bytes", "ByteBuf"], vec![]);
+                    TypeIr::noncopyable(bytes_ty)
+                },
+                "string" => TypeIr::noncopyable(syn::Ty::Path(None, "String".into())),
                 "vector" => {
                     let ty_param = get_ty_param()?.clone().unboxed();
-                    TypeIr::noncopyable(syn::parse_type(quote! { Vec<#ty_param> }.as_str()).unwrap())
+                    let vec_ty = syn_type_from_components(false, vec!["Vec"], vec![ty_param]);
+                    TypeIr::noncopyable(vec_ty)
                 },
                 "Vector" => {
                     let ty_param = get_ty_param()?.clone().unboxed();
-                    TypeIr::noncopyable(syn::parse_type(quote! { ::serde_mtproto::Boxed<Vec<#ty_param>> }.as_str()).unwrap())
+                    let vec_ty = syn_type_from_components(false, vec!["Vec"], vec![ty_param]);
+                    let boxed_ty = syn_type_from_components(true, vec!["serde_mtproto", "Boxed"], vec![vec_ty]);
+                    TypeIr::noncopyable(boxed_ty)
                 },
                 _ => return Ok(None),
             };
@@ -638,20 +593,44 @@ fn names_to_type_ir(names: &[String], type_parameters: &[TypeIr]) -> error::Resu
         }
     }
 
-    let names_as_idents = names.iter().map(|name| syn::Ident::new(name.as_str()));
+    let segments = iter::once("schema").chain(names.iter().map(String::as_str));
     let ty = if type_parameters.len() == 0 {
-        syn::parse_type(quote! { ::schema #(::#names_as_idents)* }.as_str()).unwrap()
+        syn_type_from_components(true, segments, vec![])
     } else {
-        let ty_params = type_parameters.into_iter().map(|ty_ir| ty_ir.clone().unboxed());
-        syn::parse_type(quote! { ::schema #(::#names_as_idents)* <#(#ty_params),*> }.as_str()).unwrap()
+        let ty_params = type_parameters.iter().cloned().map(TypeIr::unboxed);
+        syn_type_from_components(true, segments, ty_params)
     };
 
     // Special case two recursive types.
-    let ty = match names.last().map(String::as_str) {
+    let ty_ir = match names.last().map(String::as_str) {
         Some("PageBlock") |
         Some("RichText") => TypeIr::needs_box(ty),
         _ => TypeIr::noncopyable(ty),
     };
 
-    Ok(ty)
+    Ok(ty_ir)
+}
+
+fn syn_type_from_components<PS, PSI, TPI>(global: bool,
+                                          path_segments: PSI,
+                                          type_parameters: TPI)
+                                         -> syn::Ty
+    where PS: Into<syn::PathSegment>,
+          PSI: IntoIterator<Item=PS>,
+          TPI: IntoIterator<Item=syn::Ty>,
+{
+    let mut path = syn::Path {
+        global: global,
+        segments: path_segments.into_iter().map(Into::into).collect(),
+    };
+
+    let last_index = path.segments.len() - 1;
+    match path.segments[last_index].parameters {
+        syn::PathParameters::AngleBracketed(ref mut data) => {
+            data.types.extend(type_parameters.into_iter().map(Into::into));
+        },
+        _ => unreachable!(),
+    }
+
+    syn::Ty::Path(None, path)
 }
