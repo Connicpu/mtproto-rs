@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::iter;
 
 use syn;
+#[cfg(feature = "parsing")]
 use synom;
 
 use error::{self, ErrorKind};
@@ -527,6 +528,7 @@ pub fn wrap_option_value(wrap: bool, value: syn::Expr) -> syn::Expr {
     }
 }
 
+#[cfg(feature = "parsing")]
 pub fn no_conflict_ident(s: &str) -> syn::Ident {
     let mut candidate: String = s.into();
 
@@ -536,6 +538,18 @@ pub fn no_conflict_ident(s: &str) -> syn::Ident {
             _ => candidate.push('_'),
         }
     }
+}
+
+#[cfg(not(feature = "parsing"))]
+pub fn no_conflict_ident(s: &str) -> syn::Ident {
+    let mut candidate = s.to_owned();
+
+    match s {
+        "final" | "loop" | "self" | "static" | "type" => candidate.push('_'),
+        _ => (),
+    };
+
+    candidate.into()
 }
 
 fn names_to_type_ir(names: &[String], type_parameters: &[TypeIr]) -> error::Result<TypeIr> {
@@ -559,7 +573,7 @@ fn names_to_type_ir(names: &[String], type_parameters: &[TypeIr]) -> error::Resu
                     let ty128 = syn_type_from_components(true, vec!["extprim", "i128", "i128"], vec![]);
                     TypeIr::copyable(ty128)
                 },
-                "int236" => {
+                "int256" => {
                     let ty128 = syn_type_from_components(true, vec!["extprim", "i128", "i128"], vec![]);
                     let ty256 = syn::Ty::Tup(vec![ty128.clone(), ty128]);
                     TypeIr::copyable(ty256)

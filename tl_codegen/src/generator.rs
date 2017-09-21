@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+#[cfg(feature = "printing")]
 use quote;
 use syn;
 
@@ -9,6 +10,7 @@ use error;
 use parser;
 
 
+#[cfg(feature = "printing")]
 pub fn generate_code_for(input: &str) -> quote::Tokens {
     let items = generate_items_for(input);
 
@@ -182,7 +184,17 @@ impl Constructors {
             vis: syn::Visibility::Public,
             attrs: vec![
                 // Docs for syn 0.11.11 contain a bug: we need outer for #[..], not inner
-                syn::parse_outer_attr("#[derive(Clone, Debug)]").unwrap(),
+                syn::Attribute {
+                    style: syn::AttrStyle::Outer,
+                    value: syn::MetaItem::List(
+                        syn::Ident::new("derive"),
+                        vec!["Clone", "Debug"]
+                            .into_iter()
+                            .map(|ident| syn::NestedMetaItem::MetaItem(syn::MetaItem::Word(syn::Ident::new(ident))))
+                            .collect(),
+                    ),
+                    is_sugared_doc: false,
+                },
             ],
             // FIXME: in general case, generics can be present!
             node: syn::ItemKind::Enum(variants, syn::Generics {

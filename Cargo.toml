@@ -19,7 +19,7 @@ serde_mtproto = { git = "https://github.com/hcpl/serde_mtproto" }
 serde_mtproto_derive = { git = "https://github.com/hcpl/serde_mtproto" }
 
 [build-dependencies]
-tl_codegen = { path = "tl_codegen" }
+tl_codegen = { path = "tl_codegen", features = ["printing"] }
 
 [dev-dependencies]
 env_logger = "0.4"
