@@ -1,7 +1,8 @@
 extern crate tl_codegen;
 
-use std::io::{self, Read, Write};
+use std::ffi::OsStr;
 use std::fs::{self, File};
+use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -10,7 +11,19 @@ const OUTPUT_FILE: &str = "src/schema.rs";
 
 fn main_result() -> Result<(), io::Error> {
     let mut files = fs::read_dir(TL_DIR)?
-        .map(|r| r.map(|d| d.path()))
+        .filter_map(|r| {
+            match r {
+                Ok(d) => {
+                    let p = d.path();
+                    if p.extension().and_then(OsStr::to_str) == Some("tl") {
+                        Some(Ok(p))
+                    } else {
+                        None
+                    }
+                },
+                Err(e) => Some(Err(e)),
+            }
+        })
         .collect::<Result<Vec<PathBuf>, _>>()?;
     files.sort();
 

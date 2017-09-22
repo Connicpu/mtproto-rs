@@ -130,7 +130,7 @@ impl<'a> Identifiable for &'a TLObject {
     }
 }*/
 
-impl Serialize for Box<TLObject> {
+impl<'a> Serialize for &'a TLObject {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where S: Serializer
     {
