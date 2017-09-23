@@ -1,6 +1,7 @@
 use std::cmp;
 
 use chrono::{DateTime, Timelike, TimeZone, Utc};
+use erased_serde::Serialize as ErasedSerialize;
 use openssl::hash;
 use serde::de::{Deserialize, DeserializeSeed, DeserializeOwned};
 use serde_mtproto::{Boxed, Identifiable};
@@ -13,13 +14,14 @@ pub mod encryption;
 pub mod message;
 pub mod utils;
 
-use self::encryption::AuthKey;
-use self::message::{DecryptedData, Message, MessageSeed, MessageType};
+use rpc::encryption::AuthKey;
+use rpc::message::{DecryptedData, Message, MessageSeed, MessageType};
+use tl::dynamic::TLObject;
 
 
 // FIXME: change this
-pub trait RpcFunction {
-    type Reply;
+pub trait RpcFunction: ErasedSerialize {
+    type Reply: TLObject;
 }
 
 fn sha1_bytes(parts: &[&[u8]]) -> error::Result<Vec<u8>> {
