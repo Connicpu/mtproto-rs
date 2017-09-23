@@ -1,6 +1,7 @@
 use std::fmt;
 use std::any::Any;
 
+use erased_serde::Serialize as ErasedSerialize;
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use serde_mtproto::Identifiable;
 
@@ -41,17 +42,25 @@ impl<R: Reader> Default for TLCtorMap<R> {
     fn as_boxed_any(self: Box<Self>) -> Box<Any>;
 }*/
 
-pub trait TLObject: Any + Serialize {
+pub trait TLObject: Any + ErasedSerialize + Identifiable {
     fn as_any(&self) -> &Any;
     fn as_boxed_any(self: Box<Self>) -> Box<Any>;
 }
+
+/*impl Serialize for TLObject {
+    fn serialize<S>(&self, mut serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        self.erased_serialize(&mut serializer)
+    }
+}*/
 
 /*impl<T: Any + tl::WriteType> TLObject for T {
     /*default*/ fn as_any(&self) -> &Any { self }
     /*default*/ fn as_boxed_any(self: Box<Self>) -> Box<Any> { self }
 }*/
 
-impl<T: Any + Serialize> TLObject for T {
+impl<T: Any + Serialize + Identifiable> TLObject for T {
     fn as_any(&self) -> &Any { self }
     fn as_boxed_any(self: Box<Self>) -> Box<Any> { self }
 }
@@ -93,8 +102,12 @@ impl Clone for Box<TLObject> {
 }*/
 
 impl Identifiable for Box<TLObject> {
-    fn type_id(&self) -> Option<i32> {
+    fn type_id(&self) -> i32 {
         Identifiable::type_id(&**self)
+    }
+
+    fn enum_variant_id(&self) -> Option<&'static str> {
+        Identifiable::enum_variant_id(&**self)
     }
 }
 
@@ -104,13 +117,13 @@ impl Identifiable for Box<TLObject> {
     }
 }*/
 
-impl Serialize for Box<TLObject> {
+/*impl Serialize for Box<TLObject> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where S: Serializer
     {
-        Serialize::serialize(&**self, serializer)
+        Serialize::serialize(**self, serializer)
     }
-}
+}*/
 
 /*impl<'a> tl::IdentifiableType for &'a TLObject {
     fn type_id(&self) -> Option<ConstructorId> {
@@ -119,8 +132,12 @@ impl Serialize for Box<TLObject> {
 }*/
 
 impl<'a> Identifiable for &'a TLObject {
-    fn type_id(&self) -> Option<i32> {
+    fn type_id(&self) -> i32 {
         (*self).type_id()
+    }
+
+    fn enum_variant_id(&self) -> Option<&'static str> {
+        (*self).enum_variant_id()
     }
 }
 
@@ -130,13 +147,13 @@ impl<'a> Identifiable for &'a TLObject {
     }
 }*/
 
-impl<'a> Serialize for &'a TLObject {
+/*impl<'a> Serialize for &'a TLObject {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where S: Serializer
     {
-        (*self).serialize(serializer)
+        Serialize::serialize(*self, serializer)
     }
-}
+}*/
 
 /*impl tl::ReadType for Box<TLObject> {
     fn deserialize_bare<R: Reader>(_: Option<ConstructorId>, _: &mut R) -> Result<Self> {
@@ -148,13 +165,22 @@ impl<'a> Serialize for &'a TLObject {
     }
 }*/
 
-impl<'de> Deserialize<'de> for Box<TLObject> {
-    fn deserialize<D>(deserializer: D) -> Result<Box<TLObject>, D::Error>
+// Need to use seed variant here
+/*impl<'de> Deserialize<'de> for Box<TLObject> {
+    fn deserialize<D>(_deserializer: D) -> Result<Box<TLObject>, D::Error>
         where D: Deserializer<'de>
     {
         unimplemented!()
     }
 }
+
+impl<'de> Deserialize<'de> for Boxed<Box<TLObject>> {
+    fn deserialize<D>(deserializer: D) -> Result<Boxed<Box<TLObject>>, D::Error>
+        where D: Deserializer<'de>
+    {
+        unimplemented!()
+    }
+}*/
 
 /*impl TLObject for Box<TLObject> {
     fn as_any(&self) -> &Any {

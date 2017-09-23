@@ -3,6 +3,7 @@
 
 extern crate byteorder;
 extern crate chrono;
+extern crate erased_serde;
 #[macro_use]
 extern crate error_chain;
 extern crate extprim;

@@ -1,12 +1,11 @@
 use std::fmt;
-use std::cmp::min;
-use std::io::{self, Read, Write};
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+//use std::cmp::min;
+//use std::io::{self, Read, Write};
+//use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-use error;
+//use error;
 //use tl::dynamic::{TLCtorMap, TLObject};
-use tl::dynamic::TLObject;
-use tl;
+//use tl;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct ConstructorId(pub u32);
