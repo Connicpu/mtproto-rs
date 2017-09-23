@@ -12,22 +12,31 @@ use parser;
 
 #[cfg(feature = "printing")]
 pub fn generate_code_for(input: &str) -> quote::Tokens {
-    let items = generate_items_for(input);
+    let krate = generate_ast_for(input);
 
-    quote! {
-        #( #items )*
-    }
+    quote! { #krate }
 }
 
-pub fn generate_items_for(input: &str) -> Vec<syn::Item> {
+pub fn generate_ast_for(input: &str) -> syn::Crate {
     let constructors = {
         let mut items = parser::parse_string(input).unwrap();
         filter_items(&mut items);
         partition_by_delimiter_and_namespace(items)
     };
 
-    let mut items = vec![
-        syn::Item {
+    let mut krate = {
+        let allow_non_camel_case_types = syn::Attribute {
+            style: syn::AttrStyle::Inner,
+            value: syn::MetaItem::List(
+                syn::Ident::new("allow"),
+                vec![
+                    syn::NestedMetaItem::MetaItem(syn::MetaItem::Word(syn::Ident::new("non_camel_case_types"))),
+                ],
+            ),
+            is_sugared_doc: false,
+        };
+
+        let layer = syn::Item {
             ident: syn::Ident::new("LAYER"),
             vis: syn::Visibility::Public,
             attrs: vec![],
@@ -38,8 +47,14 @@ pub fn generate_items_for(input: &str) -> Vec<syn::Item> {
                     attrs: vec![],
                 })
             ),
+        };
+
+        syn::Crate {
+            shebang: None,
+            attrs: vec![allow_non_camel_case_types],
+            items: vec![layer],
         }
-    ];
+    };
 
     let variants_to_outputs: TypeFixupMap = constructors.types.iter()
         .flat_map(|(namespaces, constructor_map)| {
@@ -68,12 +83,12 @@ pub fn generate_items_for(input: &str) -> Vec<syn::Item> {
             });
 
         if namespaces.is_empty() {
-            items.extend(substructs);
+            krate.items.extend(substructs);
         } else {
             let mut namespaces_rev_iter = namespaces.into_iter().rev();
 
             let mut syn_mod = syn::Item {
-                ident: syn::Ident::new(namespaces_rev_iter.next().unwrap()),
+                ident: syn::Ident::new(namespaces_rev_iter.next().unwrap()), // safe to unwrap
                 vis: syn::Visibility::Public,
                 attrs: vec![],
                 node: syn::ItemKind::Mod(Some(substructs.collect())),
@@ -88,11 +103,11 @@ pub fn generate_items_for(input: &str) -> Vec<syn::Item> {
                 };
             }
 
-            items.push(syn_mod);
+            krate.items.push(syn_mod);
         }
     }
 
-    items
+    krate
 }
 
 fn filter_items(items: &mut Vec<Item>) {

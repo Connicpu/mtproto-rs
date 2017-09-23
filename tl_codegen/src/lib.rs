@@ -15,7 +15,7 @@ mod generator;
 mod parser;
 
 
-pub use generator::generate_items_for;
+pub use generator::generate_ast_for;
 
 #[cfg(feature = "printing")]
 pub use generator::generate_code_for;
