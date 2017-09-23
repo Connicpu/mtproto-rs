@@ -108,10 +108,10 @@ impl Type {
 pub struct TypeIr {
     pub(crate) ty: syn::Ty,
     pub(crate) with_option: bool,
-    pub(crate) type_ir_kind: TypeIrKind,
+    pub(crate) kind: TypeIrKind,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TypeIrKind {
     Copyable,
     NonCopyable,
@@ -124,7 +124,7 @@ impl TypeIr {
         TypeIr {
             ty: ty,
             with_option: false,
-            type_ir_kind: TypeIrKind::Copyable,
+            kind: TypeIrKind::Copyable,
         }
     }
 
@@ -132,7 +132,7 @@ impl TypeIr {
         TypeIr {
             ty: ty,
             with_option: false,
-            type_ir_kind: TypeIrKind::NonCopyable,
+            kind: TypeIrKind::NonCopyable,
         }
     }
 
@@ -140,7 +140,7 @@ impl TypeIr {
         TypeIr {
             ty: ty,
             with_option: false,
-            type_ir_kind: TypeIrKind::NeedsBox,
+            kind: TypeIrKind::NeedsBox,
         }
     }
 
@@ -148,7 +148,7 @@ impl TypeIr {
         TypeIr {
             ty: syn::Ty::Tup(vec![]),
             with_option: false,
-            type_ir_kind: TypeIrKind::Unit,
+            kind: TypeIrKind::Unit,
         }
     }
 
@@ -157,7 +157,7 @@ impl TypeIr {
     }
 
     fn impl_boxed(self) -> syn::Ty {
-        if self.type_ir_kind == TypeIrKind::NeedsBox {
+        if self.kind == TypeIrKind::NeedsBox {
             let mut path: syn::Path = "Box".into();
             match path.segments[0].parameters {
                 syn::PathParameters::AngleBracketed(ref mut data) => data.types.push(self.ty),
@@ -171,7 +171,7 @@ impl TypeIr {
     }
 
     fn impl_ref_type(self) -> syn::Ty {
-        let needs_ref = self.type_ir_kind != TypeIrKind::Copyable;
+        let needs_ref = self.kind != TypeIrKind::Copyable;
         let syn_ty = self.impl_boxed();
 
         if needs_ref {
@@ -185,7 +185,7 @@ impl TypeIr {
     }
 
     pub fn needs_option(&self) -> bool {
-        self.with_option && self.type_ir_kind != TypeIrKind::Unit
+        self.with_option && self.kind != TypeIrKind::Unit
     }
 
     pub fn unboxed(self) -> syn::Ty {
@@ -201,15 +201,15 @@ impl TypeIr {
     }
 
     /*pub fn ref_prefix(&self) -> syn::Ty {
-        if self.type_ir_kind == TypeIrKind::Copyable { quote! {} } else { quote! { ref } }
+        if self.kind == TypeIrKind::Copyable { quote! {} } else { quote! { ref } }
     }
 
     pub fn reference_prefix(&self) -> syn::Ty {
-        if self.type_ir_kind == TypeIrKind::Copyable { quote! {} } else { quote! { & } }
+        if self.kind == TypeIrKind::Copyable { quote! {} } else { quote! { & } }
     }
 
     pub fn local_reference_prefix(&self) -> syn::Ty {
-        if self.type_ir_kind == TypeIrKind::Copyable { quote! { & } } else { quote! {} }
+        if self.kind == TypeIrKind::Copyable { quote! { & } } else { quote! {} }
     }*/
 }
 
@@ -225,7 +225,7 @@ impl Field {
 
         let mut field = syn::Field {
             ident: None,
-            vis: syn::Visibility::Inherited,
+            vis: syn::Visibility::Public,
             attrs: vec![],
             ty: ty,
         };

@@ -188,7 +188,7 @@ impl Constructors {
                     style: syn::AttrStyle::Outer,
                     value: syn::MetaItem::List(
                         syn::Ident::new("derive"),
-                        vec!["Clone", "Debug"]
+                        vec!["Clone", "Debug", "Serialize", "Deserialize", "MtProtoSized"]
                             .into_iter()
                             .map(|ident| syn::NestedMetaItem::MetaItem(syn::MetaItem::Word(syn::Ident::new(ident))))
                             .collect(),
@@ -236,7 +236,7 @@ impl Constructors {
                 continue;
             }
 
-            let method_name = no_conflict_ident(method_name);
+            let method_name_no_conflict = no_conflict_ident(method_name);
             let mut type_ir = output_type.to_type_ir()?;
 
             let field_is_option = type_ir.needs_option();
@@ -245,35 +245,23 @@ impl Constructors {
                 type_ir.with_option = true;
             }
 
-            let force_option = !exhaustive && type_ir.type_ir_kind == TypeIrKind::Unit;
-            let method_call = {
-                let ident = syn::Expr {
-                    node: syn::ExprKind::Path(None, syn::Path {
-                        global: false,
-                        segments: vec![
-                            syn::PathSegment {
-                                ident: syn::Ident::new("x"),
-                                parameters: syn::PathParameters::none(),
-                            },
-                        ],
-                    }),
-                    attrs: vec![],
+            let force_option = !exhaustive && type_ir.kind == TypeIrKind::Unit;
+            let field_access = syn::ExprKind::Field(
+                Box::new(syn::ExprKind::Path(None, "x".into()).into()),
+                method_name_no_conflict.clone(),
+            ).into();
+
+            let value = if field_is_option && type_ir.kind != TypeIrKind::Copyable {
+                syn::ExprKind::MethodCall(syn::Ident::new("as_ref"), vec![], vec![field_access]).into()
+            } else {
+                let field_access = if type_ir.kind == TypeIrKind::Copyable {
+                    field_access
+                } else {
+                    syn::ExprKind::AddrOf(syn::Mutability::Immutable, Box::new(field_access)).into()
                 };
 
-                syn::Expr {
-                    node: syn::ExprKind::MethodCall(method_name.clone(), vec![], vec![ident]),
-                    attrs: vec![],
-                }
-            };
-
-            let value = if field_is_option && type_ir.type_ir_kind != TypeIrKind::Copyable {
-                syn::Expr {
-                    node: syn::ExprKind::MethodCall(syn::Ident::new("as_ref"), vec![], vec![method_call]),
-                    attrs: vec![],
-                }
-            } else {
                 let wrap = (type_ir.needs_option() && !field_is_option) || force_option;
-                wrap_option_value(wrap, method_call)
+                wrap_option_value(wrap, field_access)
             };
 
             let ty = wrap_option_type(force_option, type_ir.ref_type());
@@ -286,14 +274,8 @@ impl Constructors {
                                 syn::Path {
                                     global: false,
                                     segments: vec![
-                                        syn::PathSegment {
-                                            ident: enum_name.clone(),
-                                            parameters: syn::PathParameters::none(),
-                                        },
-                                        syn::PathSegment {
-                                            ident: c.variant_name(),
-                                            parameters: syn::PathParameters::none(),
-                                        },
+                                        enum_name.clone().into(),
+                                        c.variant_name().into(),
                                     ],
                                 },
                                 vec![
@@ -318,15 +300,7 @@ impl Constructors {
                     pats: vec![syn::Pat::Wild],
                     guard: None,
                     body: Box::new(syn::Expr {
-                        node: syn::ExprKind::Path(None, syn::Path {
-                            global: false,
-                            segments: vec![
-                                syn::PathSegment {
-                                    ident: syn::Ident::new("None"),
-                                    parameters: syn::PathParameters::none(),
-                                },
-                            ],
-                        }),
+                        node: syn::ExprKind::Path(None, "None".into()),
                         attrs: vec![],
                     }),
                 };
@@ -335,7 +309,7 @@ impl Constructors {
             }
 
             let method = syn::ImplItem {
-                ident: method_name,
+                ident: method_name_no_conflict,
                 vis: syn::Visibility::Public,
                 defaultness: syn::Defaultness::Final,
                 attrs: vec![],
