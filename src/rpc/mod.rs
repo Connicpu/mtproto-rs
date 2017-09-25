@@ -19,9 +19,8 @@ use rpc::message::{DecryptedData, Message, MessageSeed, MessageType};
 use tl::dynamic::TLObject;
 
 
-// FIXME: change this
 pub trait RpcFunction: ErasedSerialize {
-    type Reply: TLObject;
+    type Reply: TLObject + 'static;
 }
 
 fn sha1_bytes(parts: &[&[u8]]) -> error::Result<Vec<u8>> {

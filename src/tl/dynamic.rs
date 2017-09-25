@@ -42,9 +42,9 @@ impl<R: Reader> Default for TLCtorMap<R> {
     fn as_boxed_any(self: Box<Self>) -> Box<Any>;
 }*/
 
-pub trait TLObject: Any + ErasedSerialize + Identifiable {
+pub trait TLObject: Any + ErasedSerialize {
     fn as_any(&self) -> &Any;
-    fn as_boxed_any(self: Box<Self>) -> Box<Any>;
+    fn as_box_any(self: Box<Self>) -> Box<Any>;
 }
 
 /*impl Serialize for TLObject {
@@ -60,9 +60,9 @@ pub trait TLObject: Any + ErasedSerialize + Identifiable {
     /*default*/ fn as_boxed_any(self: Box<Self>) -> Box<Any> { self }
 }*/
 
-impl<T: Any + Serialize + Identifiable> TLObject for T {
+impl<T: Any + Serialize> TLObject for T {
     fn as_any(&self) -> &Any { self }
-    fn as_boxed_any(self: Box<Self>) -> Box<Any> { self }
+    fn as_box_any(self: Box<Self>) -> Box<Any> { self }
 }
 
 /*#[derive(Debug, Clone)]
@@ -101,7 +101,17 @@ impl Clone for Box<TLObject> {
     }
 }*/
 
-impl Identifiable for Box<TLObject> {
+/*impl Identifiable for TLObject {
+    fn type_id(&self) -> i32 {
+        self.as_any().type_id()
+    }
+
+    fn enum_variant_id(&self) -> Option<&'static str> {
+        self.as_any().enum_variant_id()
+    }
+}*/
+
+/*impl Identifiable for Box<TLObject> {
     fn type_id(&self) -> i32 {
         Identifiable::type_id(&**self)
     }
@@ -109,7 +119,7 @@ impl Identifiable for Box<TLObject> {
     fn enum_variant_id(&self) -> Option<&'static str> {
         Identifiable::enum_variant_id(&**self)
     }
-}
+}*/
 
 /*impl tl::WriteType for Box<TLObject> {
     fn serialize(&self, writer: &mut Writer) -> Result<()> {
@@ -131,7 +141,7 @@ impl Identifiable for Box<TLObject> {
     }
 }*/
 
-impl<'a> Identifiable for &'a TLObject {
+/*impl<'a> Identifiable for &'a TLObject {
     fn type_id(&self) -> i32 {
         (*self).type_id()
     }
@@ -139,7 +149,7 @@ impl<'a> Identifiable for &'a TLObject {
     fn enum_variant_id(&self) -> Option<&'static str> {
         (*self).enum_variant_id()
     }
-}
+}*/
 
 /*impl<'a> tl::WriteType for &'a TLObject {
     fn serialize(&self, writer: &mut Writer) -> Result<()> {
@@ -194,7 +204,8 @@ impl<'de> Deserialize<'de> for Boxed<Box<TLObject>> {
 
 impl fmt::Debug for TLObject {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "(boxed TLObject tl_id:{:?})", self.type_id())
+        write!(f, "(TLObject)")
+        //write!(f, "(boxed TLObject tl_id:{:?})", self.type_id())
     }
 }
 
