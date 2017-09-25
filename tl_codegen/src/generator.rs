@@ -74,16 +74,11 @@ pub fn generate_ast_for(input: &str) -> syn::Crate {
         })
         .collect();
 
-    for (namespaces, mut constructor_map) in constructors.types {
-        let substructs = constructor_map.values_mut()
-            .flat_map(|mut c| {
-                c.fixup(Delimiter::Functions, &variants_to_outputs);
-                //c.to_data_type_quoted().unwrap() // FIXME
-                c.to_syn_data_type_items().unwrap() // FIXME
-            });
-
+    fn process_namespaces<I>(items_buf: &mut Vec<syn::Item>, namespaces: Vec<String>, items: I)
+        where I: IntoIterator<Item=syn::Item>
+    {
         if namespaces.is_empty() {
-            krate.items.extend(substructs);
+            items_buf.extend(items);
         } else {
             let mut namespaces_rev_iter = namespaces.into_iter().rev();
 
@@ -91,7 +86,7 @@ pub fn generate_ast_for(input: &str) -> syn::Crate {
                 ident: syn::Ident::new(namespaces_rev_iter.next().unwrap()), // safe to unwrap
                 vis: syn::Visibility::Public,
                 attrs: vec![],
-                node: syn::ItemKind::Mod(Some(substructs.collect())),
+                node: syn::ItemKind::Mod(Some(items.into_iter().collect())),
             };
 
             for namespace in namespaces_rev_iter {
@@ -103,9 +98,39 @@ pub fn generate_ast_for(input: &str) -> syn::Crate {
                 };
             }
 
-            krate.items.push(syn_mod);
+            items_buf.push(syn_mod);
         }
+    };
+
+    for (namespaces, mut constructor_map) in constructors.types {
+        let substructs = constructor_map.values_mut()
+            .flat_map(|mut c| {
+                c.fixup(Delimiter::Functions, &variants_to_outputs);
+                //c.to_data_type_quoted().unwrap() // FIXME
+                c.to_syn_data_type_items().unwrap() // FIXME
+            });
+
+        process_namespaces(&mut krate.items, namespaces, substructs);
     }
+
+    let mut rpc_items = vec![];
+    for (namespaces, mut substructs) in constructors.functions {
+        substructs.sort_by(|c1, c2| c1.variant.cmp(&c2.variant));
+        let substructs = substructs.into_iter()
+            .flat_map(|mut c| {
+                c.fixup(Delimiter::Functions, &variants_to_outputs);
+                c.to_syn_function_struct().unwrap() // FIXME
+            });
+
+        process_namespaces(&mut rpc_items, namespaces, substructs);
+    }
+
+    krate.items.push(syn::Item {
+        ident: "rpc".into(),
+        vis: syn::Visibility::Public,
+        attrs: vec![],
+        node: syn::ItemKind::Mod(Some(rpc_items)),
+    });
 
     krate
 }

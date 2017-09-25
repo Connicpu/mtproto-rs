@@ -346,10 +346,47 @@ impl Constructor {
 
     fn syn_generics(&self) -> syn::Generics {
         let ty_params = self.type_parameters.iter()
+            .map(|field| syn::Ident::new(field.name.clone().unwrap()).into()) // FIXME
+            .collect();
+
+        syn::Generics {
+            lifetimes: vec![],
+            ty_params: ty_params,
+            where_clause: Default::default(),
+        }
+    }
+
+    fn syn_rpc_generics(&self) -> syn::Generics {
+        if self.type_parameters.is_empty() {
+            return syn::Generics::default();
+        }
+
+        let ty_params = self.type_parameters.iter()
             .map(|field| syn::TyParam {
                 attrs: vec![],
                 ident: syn::Ident::new(field.name.clone().unwrap()), // FIXME
-                bounds: vec![],
+                bounds: vec![
+                    syn::TyParamBound::Trait(
+                        syn::PolyTraitRef {
+                            bound_lifetimes: vec![],
+                            trait_ref: syn::Path {
+                                global: true,
+                                segments: vec!["rpc".into(), "RpcFunction".into()],
+                            },
+                        },
+                        syn::TraitBoundModifier::None,
+                    ),
+                    syn::TyParamBound::Trait(
+                        syn::PolyTraitRef {
+                            bound_lifetimes: vec![],
+                            trait_ref: syn::Path {
+                                global: true,
+                                segments: vec!["serde".into(), "Serialize".into()],
+                            },
+                        },
+                        syn::TraitBoundModifier::None,
+                    ),
+                ],
                 default: None,
             })
             .collect();
@@ -360,10 +397,6 @@ impl Constructor {
             where_clause: Default::default(),
         }
     }
-
-    /*fn rpc_generics(&self) -> quote::Tokens {
-        
-    }*/
 
     fn to_syn_struct(&self, name: &syn::Ident) -> error::Result<syn::Item> {
         let syn_generics = self.syn_generics();
@@ -461,6 +494,64 @@ impl Constructor {
     pub fn to_syn_single_type_struct(&self) -> error::Result<syn::Item> {
         let name = self.output.name().map(no_conflict_ident).unwrap(); // FIXME
         self.to_syn_type_struct_base(name)
+    }
+
+    pub fn to_syn_function_struct(&self) -> error::Result<Vec<syn::Item>> {
+        let name = self.variant_name();
+        let syn_rpc_generics = self.syn_rpc_generics();
+        let syn_generics = self.syn_generics();
+        let generic_types = syn_generics.ty_params
+            .into_iter()
+            .map(|ty_param| syn::Ty::Path(None, ty_param.ident.into()));
+
+        let struct_block = self.to_syn_struct(&name)?;
+        let mut output_ty = self.output.to_type_ir()?.unboxed();
+        if self.output.is_type_parameter() {
+            match output_ty {
+                syn::Ty::Path(None, mut path) => {
+                    path.segments.push("Reply".into());
+                    output_ty = syn::Ty::Path(None, path);
+                },
+                _ => unreachable!(),
+            }
+        }
+
+        let impl_item = syn::Item {
+            ident: "".into(),
+            vis: syn::Visibility::Inherited,
+            attrs: vec![],
+            node: syn::ItemKind::Impl(
+                syn::Unsafety::Normal,
+                syn::ImplPolarity::Positive,
+                syn_rpc_generics,
+                Some(syn::Path {
+                    global: true,
+                    segments: vec!["rpc".into(), "RpcFunction".into()],
+                }),
+                //Box::new(syn::Ty::Path(None, name.into())),
+                /*Box::new(syn::Ty::Path(None, syn::Path {
+                    global: false,
+                    segments: vec![
+                        syn::PathSegment {
+                            ident: name.into(),
+                            parameters: syn::PathParameters::AngleBracketed
+                        },
+                    ],
+                })),*/
+                Box::new(syn_type_from_components(false, vec![name], generic_types)),
+                vec![
+                    syn::ImplItem {
+                        ident: "Reply".into(),
+                        vis: syn::Visibility::Inherited,
+                        defaultness: syn::Defaultness::Final,
+                        attrs: vec![],
+                        node: syn::ImplItemKind::Type(output_ty),
+                    }
+                ],
+            ),
+        };
+
+        Ok(vec![struct_block, impl_item])
     }
 
     /*fn to_variant_def_destructure(&self, name: &syn::Ident) -> Option<quote::Tokens> {
