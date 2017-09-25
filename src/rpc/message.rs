@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use extprim::i128::i128;
 use serde::ser::{self, Error as SerError, Serialize};
 use serde::de::{self, DeserializeOwned, DeserializeSeed, Error as DeError, SeqAccess, Visitor};
-use serde_mtproto::{self, Boxed, UnsizedByteBuf, UnsizedByteBufSeed};
+use serde_mtproto::{self, Boxed, WithSize, UnsizedByteBuf, UnsizedByteBufSeed};
 
 use error::{self, ErrorKind};
 
@@ -23,7 +23,7 @@ pub enum MessageType {
 pub enum Message<T> {
     PlainText {
         message_id: i64,
-        body: Boxed<T>,
+        body: WithSize<Boxed<T>>,
     },
     Decrypted {
         decrypted_data: DecryptedData<T>,
@@ -36,7 +36,7 @@ pub struct DecryptedData<T> {
     pub(super) session_id: i64,
     pub(super) message_id: i64,
     pub(super) seq_no: i32,
-    pub(super) body: Boxed<T>,
+    pub(super) body: WithSize<Boxed<T>>,
 
     #[serde(skip)]
     pub(super) key: AuthKey,
@@ -124,7 +124,7 @@ impl<'de, T: DeserializeOwned> DeserializeSeed<'de> for MessageSeed<T> {
                 let message = if auth_key_id == 0 {
                     let message_id = seq.next_element()?
                         .ok_or(errconv(ErrorKind::NotEnoughFields("Message::PlainText", 1)))?;
-                    let body: EitherRef<Boxed<T>> = seq.next_element()?
+                    let body: EitherRef<WithSize<Boxed<T>>> = seq.next_element()?
                         .ok_or(errconv(ErrorKind::NotEnoughFields("Message::PlainText", 2)))?;
 
                     Message::PlainText {
@@ -172,7 +172,7 @@ enum RawMessage<'a, T: 'a> {
     PlainText {
         auth_key_id: i64,
         message_id: i64,
-        body: EitherRef<'a, Boxed<T>>,
+        body: EitherRef<'a, WithSize<Boxed<T>>>,
     },
     Encrypted {
         auth_key_id: i64,

@@ -4,7 +4,7 @@ use chrono::{DateTime, Timelike, TimeZone, Utc};
 use erased_serde::Serialize as ErasedSerialize;
 use openssl::hash;
 use serde::de::{Deserialize, DeserializeSeed, DeserializeOwned};
-use serde_mtproto::{Boxed, Identifiable};
+use serde_mtproto::{Boxed, Identifiable, MtProtoSized, WithSize};
 
 use error::{self, ErrorKind};
 use schema::FutureSalt;
@@ -159,13 +159,13 @@ impl Session {
     }
 
     pub fn create_message<T>(&mut self, body: T, msg_type: MessageType) -> error::Result<Message<T>>
-        where T: Identifiable
+        where T: Identifiable + MtProtoSized
     {
         let message = match msg_type {
             MessageType::PlainText => {
                 Message::PlainText {
                     message_id: next_message_id(),
-                    body: Boxed::new(body),
+                    body: WithSize::new(Boxed::new(body))?,
                 }
             },
             MessageType::Encrypted => {
@@ -185,14 +185,14 @@ impl Session {
     }
 
     fn impl_create_decrypted_message<T>(&mut self, body: T, purpose: MessagePurpose) -> error::Result<Message<T>>
-        where T: Identifiable
+        where T: Identifiable + MtProtoSized
     {
         let decrypted_data = DecryptedData {
             salt: self.latest_server_salt()?,
             session_id: self.session_id,
             message_id: next_message_id(),
             seq_no: self.next_seq_no(purpose),
-            body: Boxed::new(body),
+            body: WithSize::new(Boxed::new(body))?,
 
             key: self.fresh_auth_key()?,
         };
