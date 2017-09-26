@@ -9,7 +9,7 @@ use super::{AuthKey, Padding, sha1_and_or_pad};
 #[derive(Debug)]
 pub struct RsaRawPublicKeyRef<'a>(&'a [u8]);
 
-pub const KNOWN_KEYS: &'static [RsaRawPublicKeyRef<'static>] = &[
+pub const KNOWN_RAW_KEYS: &'static [RsaRawPublicKeyRef<'static>] = &[
     RsaRawPublicKeyRef(b"\
 -----BEGIN PUBLIC KEY-----\n\
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwVACPi9w23mF3tBkdZz+\n\
@@ -30,14 +30,16 @@ impl<'a> RsaRawPublicKeyRef<'a> {
 }
 
 
+#[derive(Debug)]
 pub struct RsaPublicKey(rsa::Rsa);
 
 impl RsaPublicKey {
     pub fn sha1_fingerprint(&self) -> error::Result<Vec<u8>> {
         let mut buf = Vec::new();
 
-        serde_mtproto::to_writer(buf.as_mut_slice(), &self.0.n().unwrap().to_vec())?; // FIXME
-        serde_mtproto::to_writer(buf.as_mut_slice(), &self.0.e().unwrap().to_vec())?; // FIXME
+        // Need to allocate new space, so use `&mut buf` instead of `buf.as_mut_slice()`
+        serde_mtproto::to_writer(&mut buf, &self.0.n().unwrap().to_vec())?; // FIXME
+        serde_mtproto::to_writer(&mut buf, &self.0.e().unwrap().to_vec())?; // FIXME
 
         let mut hasher = hash::Hasher::new(hash::MessageDigest::sha1())?;
         hasher.update(&buf)?;
@@ -62,24 +64,21 @@ impl RsaPublicKey {
     }
 }
 
+pub fn find_first_key_fail_safe(of_fingerprints: &[i64]) -> error::Result<(RsaPublicKey, i64)> {
+    find_first_key(of_fingerprints)?
+        .ok_or(ErrorKind::NoRsaPublicKeyForFingerprints(of_fingerprints.to_vec()).into())
+}
+
 pub fn find_first_key(of_fingerprints: &[i64]) -> error::Result<Option<(RsaPublicKey, i64)>> {
-    let iter = KNOWN_KEYS.iter()
-        .map(|k| {
-            let key = k.read()?;
-            let fingerprint = key.fingerprint()?;
+    for raw_key in KNOWN_RAW_KEYS {
+        let key = raw_key.read()?;
+        let fingerprint = key.fingerprint()?;
 
-            if of_fingerprints.contains(&fingerprint) {
-                Ok(Some((key, fingerprint)))
-            } else {
-                Ok(None)
-            }
-        });
-
-    for item in iter {
-        if let Some(x) = (item as error::Result<_>)? {
-            return Ok(Some(x))
+        if of_fingerprints.contains(&fingerprint) {
+            return Ok(Some((key, fingerprint)));
         }
     }
+
     Ok(None)
 }
 

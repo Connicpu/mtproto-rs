@@ -24,6 +24,16 @@ error_chain! {
                 label, fields_count_so_far)
         }
 
+        Sha1Total255Longer {
+            description("The input string is already longer than 255 bytes")
+        }
+
+        NoRsaPublicKeyForFingerprints(fingerprints: Vec<i64>) {
+            description("No RSA public key found corresponding to any of specified fingerprints")
+            display("No RSA public key found corresponding to any of specified fingerprints: {:?}",
+                fingerprints)
+        }
+
         // other
         FactorizationFailure {}
         NoAuthKey {}

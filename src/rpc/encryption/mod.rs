@@ -222,6 +222,10 @@ fn sha1_and_or_pad(input: &[u8], prepend_sha1: bool, padding: Padding) -> error:
 
     match padding {
         Padding::Total255 => {
+            if ret.len() > 255 {
+                bail!(ErrorKind::Sha1Total255Longer);
+            }
+
             while ret.len() < 255 {
                 ret.push(0);
             }
