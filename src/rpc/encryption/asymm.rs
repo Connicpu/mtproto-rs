@@ -1,5 +1,8 @@
+use std::fmt;
+
 use byteorder::{LittleEndian, ByteOrder};
 use openssl::{bn, hash, rsa};
+use serde_bytes::ByteBuf;
 use serde_mtproto;
 
 use error::{self, ErrorKind};
@@ -30,16 +33,51 @@ impl<'a> RsaRawPublicKeyRef<'a> {
 }
 
 
-#[derive(Debug)]
 pub struct RsaPublicKey(rsa::Rsa);
+
+impl fmt::Debug for RsaPublicKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        struct RsaRepr<'a> {
+            n: &'a bn::BigNumRef,
+            e: &'a bn::BigNumRef,
+        }
+
+        impl<'a> fmt::Debug for RsaRepr<'a> {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.debug_struct("RsaRepr")
+                    .field("n", &DisplayStr(&self.n.to_hex_str().unwrap().to_lowercase()))
+                    .field("e", &DisplayStr(&self.e.to_hex_str().unwrap().to_lowercase()))
+                    .finish()
+            }
+        }
+
+        struct DisplayStr<'a>(&'a str);
+
+        impl<'a> fmt::Debug for DisplayStr<'a> {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                fmt::Display::fmt(self.0, f)
+            }
+        }
+
+        let rsa_repr = RsaRepr {
+            n: self.0.n().unwrap(), // FIXME?
+            e: self.0.e().unwrap(), // FIXME?
+        };
+
+        f.debug_tuple("RsaPublicKey")
+            .field(&rsa_repr)
+            .finish()
+    }
+}
+
 
 impl RsaPublicKey {
     pub fn sha1_fingerprint(&self) -> error::Result<Vec<u8>> {
         let mut buf = Vec::new();
 
         // Need to allocate new space, so use `&mut buf` instead of `buf.as_mut_slice()`
-        serde_mtproto::to_writer(&mut buf, &self.0.n().unwrap().to_vec())?; // FIXME
-        serde_mtproto::to_writer(&mut buf, &self.0.e().unwrap().to_vec())?; // FIXME
+        serde_mtproto::to_writer(&mut buf, &ByteBuf::from(self.0.n().unwrap().to_vec()))?; // FIXME
+        serde_mtproto::to_writer(&mut buf, &ByteBuf::from(self.0.e().unwrap().to_vec()))?; // FIXME
 
         let mut hasher = hash::Hasher::new(hash::MessageDigest::sha1())?;
         hasher.update(&buf)?;
