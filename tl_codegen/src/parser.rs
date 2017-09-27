@@ -127,7 +127,7 @@ fn lines() -> Parser<u8, Vec<Item>> {
 }
 
 
-pub fn parse_string(input: &str) -> Result<Vec<Item>, pom::Error> {
+pub fn parse_string(input: &str) -> pom::Result<Vec<Item>> {
     let mut input = pom::DataInput::new(input.as_bytes());
     lines().parse(&mut input)
 }

@@ -130,7 +130,8 @@ impl Session {
         };
 
         self.server_salts.retain(|s| &s.valid_until >= &time);
-        let salt = self.server_salts.first().unwrap().salt;
+        assert!(self.server_salts.len() >= 1);
+        let salt = self.server_salts[0].salt;
 
         Ok(salt)
     }

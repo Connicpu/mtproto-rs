@@ -38,15 +38,26 @@ pub struct RsaPublicKey(rsa::Rsa);
 impl fmt::Debug for RsaPublicKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         struct RsaRepr<'a> {
-            n: &'a bn::BigNumRef,
-            e: &'a bn::BigNumRef,
+            n: Option<&'a bn::BigNumRef>,
+            e: Option<&'a bn::BigNumRef>,
         }
 
         impl<'a> fmt::Debug for RsaRepr<'a> {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                let debug_option_big_num = |opt_big_num: Option<&bn::BigNumRef>| {
+                    match opt_big_num {
+                        Some(big_num) => match big_num.to_hex_str() {
+                            Ok(hex_str) => hex_str.to_lowercase(),
+                            Err(_) => big_num.to_vec().iter()
+                                .map(|byte| format!("{:02x}", byte)).collect::<String>(),
+                        },
+                        None => "(None)".to_owned(),
+                    }
+                };
+
                 f.debug_struct("RsaRepr")
-                    .field("n", &DisplayStr(&self.n.to_hex_str().unwrap().to_lowercase()))
-                    .field("e", &DisplayStr(&self.e.to_hex_str().unwrap().to_lowercase()))
+                    .field("n", &DisplayStr(&debug_option_big_num(self.n)))
+                    .field("e", &DisplayStr(&debug_option_big_num(self.e)))
                     .finish()
             }
         }
@@ -60,8 +71,8 @@ impl fmt::Debug for RsaPublicKey {
         }
 
         let rsa_repr = RsaRepr {
-            n: self.0.n().unwrap(), // FIXME?
-            e: self.0.e().unwrap(), // FIXME?
+            n: self.0.n(),
+            e: self.0.e(),
         };
 
         f.debug_tuple("RsaPublicKey")
@@ -75,9 +86,12 @@ impl RsaPublicKey {
     pub fn sha1_fingerprint(&self) -> error::Result<Vec<u8>> {
         let mut buf = Vec::new();
 
+        let n_bytes = self.0.n().ok_or(error::Error::from(ErrorKind::NoModulus))?.to_vec();
+        let e_bytes = self.0.e().ok_or(error::Error::from(ErrorKind::NoExponent))?.to_vec();
+
         // Need to allocate new space, so use `&mut buf` instead of `buf.as_mut_slice()`
-        serde_mtproto::to_writer(&mut buf, &ByteBuf::from(self.0.n().unwrap().to_vec()))?; // FIXME
-        serde_mtproto::to_writer(&mut buf, &ByteBuf::from(self.0.e().unwrap().to_vec()))?; // FIXME
+        serde_mtproto::to_writer(&mut buf, &ByteBuf::from(n_bytes))?;
+        serde_mtproto::to_writer(&mut buf, &ByteBuf::from(e_bytes))?;
 
         let mut hasher = hash::Hasher::new(hash::MessageDigest::sha1())?;
         hasher.update(&buf)?;
@@ -91,9 +105,9 @@ impl RsaPublicKey {
         Ok(LittleEndian::read_i64(&sha1_fingerprint[12..20]))
     }
 
-    pub fn encrypt(self, input: &[u8]) -> error::Result<[u8; 256]> {
+    pub fn encrypt(&self, input: &[u8]) -> error::Result<[u8; 256]> {
         let mut padded_input = sha1_and_or_pad(input, true, Padding::Total255)?;
-        padded_input.insert(0, 0);
+        padded_input.insert(0, 0);    // OpenSSL requires exactly 256 bytes
 
         let mut output = [0; 256];
         self.0.public_encrypt(&padded_input, &mut output, rsa::NO_PADDING)?;

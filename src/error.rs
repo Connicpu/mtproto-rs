@@ -34,6 +34,14 @@ error_chain! {
                 fingerprints)
         }
 
+        NoModulus {
+            description("No modulus found from a RSA key")
+        }
+
+        NoExponent {
+            description("No exponent found from a RSA key")
+        }
+
         // other
         FactorizationFailure {}
         NoAuthKey {}
