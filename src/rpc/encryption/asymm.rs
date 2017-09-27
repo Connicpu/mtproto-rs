@@ -114,6 +114,23 @@ impl RsaPublicKey {
 
         Ok(output)
     }
+
+    // Other implementation of RSA encryption, just to verify that we are on the right track with
+    // `encrypt()`. Also can be served as a drop-in replacement in case if we abandon OpenSSL
+    // dependency after rewriting this method to use `num_bigint::BigUInt`.
+    pub fn encrypt2(&self, input: &[u8]) -> error::Result<Vec<u8>> {
+        let mut padded_input = sha1_and_or_pad(input, true, Padding::Total255)?;
+
+        let n = self.0.n().ok_or(error::Error::from(ErrorKind::NoModulus))?;
+        let e = self.0.e().ok_or(error::Error::from(ErrorKind::NoExponent))?;
+
+        let padded_input = bn::BigNum::from_slice(&padded_input)?;
+        let mut output = bn::BigNum::new()?;
+        let mut context = bn::BigNumContext::new()?;
+        output.mod_exp(&padded_input, e, n, &mut context)?;
+
+        Ok(output.to_vec())
+    }
 }
 
 pub fn find_first_key_fail_safe(of_fingerprints: &[i64]) -> error::Result<(RsaPublicKey, i64)> {
