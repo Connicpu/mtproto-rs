@@ -2,6 +2,7 @@ target
 Cargo.lock
 ApiInfo.toml
 /src/schema.rs
+app_id.toml
 
 *~
 [._]*.sw?

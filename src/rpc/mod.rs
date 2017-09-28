@@ -44,7 +44,7 @@ fn next_message_id() -> i64 {
 }
 
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AppId {
     api_id: i32,
     // FIXME: use &'static str or Cow<'static, str> here
