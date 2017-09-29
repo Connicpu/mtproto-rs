@@ -144,8 +144,8 @@ impl Session {
         self.server_salts.sort_by(|a, b| a.valid_since.cmp(&b.valid_since));
     }
 
-    pub fn adopt_key(&mut self, authorization_key: AuthKey) {
-        self.auth_key = Some(authorization_key);
+    pub fn adopt_key(&mut self, auth_key: AuthKey) {
+        self.auth_key = Some(auth_key);
     }
 
     pub fn ack_id(&mut self, id: i64) {
@@ -221,7 +221,7 @@ impl Session {
         }
 
         // FIXME: use safe casts here
-        let seed = MessageSeed::new(self.fresh_auth_key()?, (message_bytes.len() - 24) as u32);
+        let seed = MessageSeed::new(self.auth_key.clone(), (message_bytes.len() - 24) as u32);
         seed.deserialize(&mut deserializer).map_err(Into::into)
     }
 }

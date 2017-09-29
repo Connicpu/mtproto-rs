@@ -58,103 +58,99 @@ fn auth(handle: Handle) -> error::Result<Box<Future<Item = (), Error = error::Er
 
     let mut rng = rand::thread_rng();
     let mut session = Session::new(rng.gen(), app_id);
-    session.adopt_key(Default::default());
 
     let req_pq = schema::rpc::req_pq {
         nonce: rng.gen(),
     };
 
     let http_request = create_http_request(&mut session, req_pq, MessageType::PlainText)?;
-    let auth_future = future_request(&http_client, http_request)
-        .and_then(move |response_bytes| {
-            let fallible = || {
-                println!("Response bytes: {:?}", &response_bytes);
-                let response: Message<schema::ResPQ> = session.process_message(&response_bytes)?;
-                println!("Message received: {:#?}", &response);
+    let auth_future = future_request(&http_client, http_request).and_then(move |response_bytes| {
+        let fallible = || {
+            println!("Response bytes: {:?}", &response_bytes);
+            let response: Message<schema::ResPQ> = session.process_message(&response_bytes)?;
+            println!("Message received: {:#?}", &response);
 
-                let res_pq = match response {
-                    Message::PlainText { body, .. } => body.into_inner().into_inner(),
-                    _ => unreachable!(),
-                };
-
-                // FIXME: check nonces' equality here
-
-                let pq_u64 = BigEndian::read_u64(&res_pq.pq);
-                println!("Decomposing pq = {}...", pq_u64);
-                let (p_u32, q_u32) = asymm::decompose_pq(pq_u64)?;
-                println!("Decomposed p = {}, q = {}", p_u32, q_u32);
-                let u32_to_vec = |num| {
-                    let mut v = vec![0; 4];
-                    BigEndian::write_u32(v.as_mut_slice(), num);
-                    v
-                };
-                let p = u32_to_vec(p_u32);
-                let q = u32_to_vec(q_u32);
-
-                let p_q_inner_data = schema::P_Q_inner_data {
-                    pq: res_pq.pq,
-                    p: p.clone().into(),
-                    q: q.clone().into(),
-                    nonce: res_pq.nonce,
-                    server_nonce: res_pq.server_nonce,
-                    new_nonce: rng.gen(),
-                };
-
-                println!("Data to send: {:#?}", &p_q_inner_data);
-                let p_q_inner_data_serialized = serde_mtproto::to_bytes(&p_q_inner_data)?;
-                println!("Data bytes to send: {:?}", &p_q_inner_data_serialized);
-                let known_sha1_fingerprints = asymm::KNOWN_RAW_KEYS.iter()
-                    .map(|raw_key| {
-                        let sha1_fingerprint = raw_key.read()?.sha1_fingerprint()?;
-                        Ok(sha1_fingerprint.iter().map(|b| format!("{:02x}", b)).collect::<String>())
-                    })
-                    .collect::<error::Result<Vec<_>>>()?;
-                println!("Known public key SHA1 fingerprints: {:?}", known_sha1_fingerprints);
-                let known_fingerprints = asymm::KNOWN_RAW_KEYS.iter()
-                    .map(|raw_key| Ok(raw_key.read()?.fingerprint()?))
-                    .collect::<error::Result<Vec<_>>>()?;
-                println!("Known public key fingerprints: {:?}", known_fingerprints);
-                let server_pk_fingerprints = res_pq.server_public_key_fingerprints.inner().as_slice();
-                println!("Server public key fingerprints: {:?}", &server_pk_fingerprints);
-                let (rsa_public_key, fingerprint) =
-                    asymm::find_first_key_fail_safe(server_pk_fingerprints)?;
-                println!("RSA public key used: {:#?}", &rsa_public_key);
-                let encrypted_data = rsa_public_key.encrypt(&p_q_inner_data_serialized)?;
-                println!("Encrypted data: {:?}", encrypted_data.as_ref());
-                let encrypted_data2 = rsa_public_key.encrypt2(&p_q_inner_data_serialized)?;
-                println!("Encrypted data 2: {:?}", &encrypted_data2);
-
-                let req_dh_params = schema::rpc::req_DH_params {
-                    nonce: res_pq.nonce,
-                    server_nonce: res_pq.server_nonce,
-                    p: p.into(),
-                    q: q.into(),
-                    public_key_fingerprint: fingerprint,
-                    encrypted_data: encrypted_data.to_vec().into(),
-                    //encrypted_data: encrypted_data2.into(),
-                };
-
-                let http_request = create_http_request(&mut session, req_dh_params, MessageType::PlainText)?;
-
-                Ok((http_request, session))
+            let res_pq = match response {
+                Message::PlainText { body, .. } => body.into_inner().into_inner(),
+                _ => unreachable!(),
             };
 
-            futures::future::result(fallible())
-                .and_then(move |(http_request, session)| {
-                    future_request(&http_client, http_request).map(|bytes| (bytes, session))
+            // FIXME: check nonces' equality here
+
+            let pq_u64 = BigEndian::read_u64(&res_pq.pq);
+            println!("Decomposing pq = {}...", pq_u64);
+            let (p_u32, q_u32) = asymm::decompose_pq(pq_u64)?;
+            println!("Decomposed p = {}, q = {}", p_u32, q_u32);
+            let u32_to_vec = |num| {
+                let mut v = vec![0; 4];
+                BigEndian::write_u32(v.as_mut_slice(), num);
+                v
+            };
+            let p = u32_to_vec(p_u32);
+            let q = u32_to_vec(q_u32);
+
+            let p_q_inner_data = schema::P_Q_inner_data {
+                pq: res_pq.pq,
+                p: p.clone().into(),
+                q: q.clone().into(),
+                nonce: res_pq.nonce,
+                server_nonce: res_pq.server_nonce,
+                new_nonce: rng.gen(),
+            };
+
+            println!("Data to send: {:#?}", &p_q_inner_data);
+            let p_q_inner_data_serialized = serde_mtproto::to_bytes(&p_q_inner_data)?;
+            println!("Data bytes to send: {:?}", &p_q_inner_data_serialized);
+            let known_sha1_fingerprints = asymm::KNOWN_RAW_KEYS.iter()
+                .map(|raw_key| {
+                    let sha1_fingerprint = raw_key.read()?.sha1_fingerprint()?;
+                    Ok(sha1_fingerprint.iter().map(|b| format!("{:02x}", b)).collect::<String>())
                 })
-        })
-        .and_then(|(response_bytes, session)| {
-            let fallible = || {
-                println!("Response bytes: {:?}", &response_bytes);
-                let response: Message<schema::Server_DH_Params> = session.process_message(&response_bytes)?;
-                println!("Message received: {:#?}", &response);
+                .collect::<error::Result<Vec<_>>>()?;
+            println!("Known public key SHA1 fingerprints: {:?}", known_sha1_fingerprints);
+            let known_fingerprints = asymm::KNOWN_RAW_KEYS.iter()
+                .map(|raw_key| Ok(raw_key.read()?.fingerprint()?))
+                .collect::<error::Result<Vec<_>>>()?;
+            println!("Known public key fingerprints: {:?}", known_fingerprints);
+            let server_pk_fingerprints = res_pq.server_public_key_fingerprints.inner().as_slice();
+            println!("Server public key fingerprints: {:?}", &server_pk_fingerprints);
+            let (rsa_public_key, fingerprint) =
+                asymm::find_first_key_fail_safe(server_pk_fingerprints)?;
+            println!("RSA public key used: {:#?}", &rsa_public_key);
+            let encrypted_data = rsa_public_key.encrypt(&p_q_inner_data_serialized)?;
+            println!("Encrypted data: {:?}", encrypted_data.as_ref());
+            let encrypted_data2 = rsa_public_key.encrypt2(&p_q_inner_data_serialized)?;
+            println!("Encrypted data 2: {:?}", &encrypted_data2);
 
-                Ok(())
+            let req_dh_params = schema::rpc::req_DH_params {
+                nonce: res_pq.nonce,
+                server_nonce: res_pq.server_nonce,
+                p: p.into(),
+                q: q.into(),
+                public_key_fingerprint: fingerprint,
+                encrypted_data: encrypted_data.to_vec().into(),
+                //encrypted_data: encrypted_data2.into(),
             };
 
-            futures::future::result(fallible())
-        });
+            let http_request = create_http_request(&mut session, req_dh_params, MessageType::PlainText)?;
+
+            Ok((http_request, session))
+        };
+
+        futures::future::result(fallible()).and_then(move |(http_request, session)| {
+            future_request(&http_client, http_request).map(|bytes| (bytes, session))
+        })
+    }).and_then(|(response_bytes, session)| {
+        let fallible = || {
+            println!("Response bytes: {:?}", &response_bytes);
+            let response: Message<schema::Server_DH_Params> = session.process_message(&response_bytes)?;
+            println!("Message received: {:#?}", &response);
+
+            Ok(())
+        };
+
+        futures::future::result(fallible())
+    });
 
     Ok(Box::new(auth_future))
 }

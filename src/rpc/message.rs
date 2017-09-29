@@ -78,15 +78,15 @@ impl<T: Serialize> Serialize for Message<T> {
 
 #[derive(Debug)]
 pub struct MessageSeed<T> {
-    key: AuthKey,
+    opt_key: Option<AuthKey>,
     encrypted_data_len: u32,
     phantom: PhantomData<T>,
 }
 
 impl<T: DeserializeOwned> MessageSeed<T> {
-    pub fn new(key: AuthKey, encrypted_data_len: u32) -> MessageSeed<T> {
+    pub fn new(opt_key: Option<AuthKey>, encrypted_data_len: u32) -> MessageSeed<T> {
         MessageSeed {
-            key: key,
+            opt_key: opt_key,
             encrypted_data_len: encrypted_data_len,
             phantom: PhantomData,
         }
@@ -100,7 +100,7 @@ impl<'de, T: DeserializeOwned> DeserializeSeed<'de> for MessageSeed<T> {
         where D: de::Deserializer<'de>
     {
         struct MessageVisitor<T> {
-            key: AuthKey,
+            opt_key: Option<AuthKey>,
             encrypted_data_len: u32,
             phantom: PhantomData<T>,
         }
@@ -139,13 +139,14 @@ impl<'de, T: DeserializeOwned> DeserializeSeed<'de> for MessageSeed<T> {
                     let encrypted_data = seq.next_element_seed(seed)?
                         .ok_or(errconv(ErrorKind::NotEnoughFields("Message::Decrypted", 2)))?;
 
-                    let decrypted_data_serialized = self.key
+                    let key = self.opt_key.ok_or(errconv(ErrorKind::NoAuthKey))?;
+                    let decrypted_data_serialized = key
                         .decrypt_message_bytes(auth_key_id, message_key, &encrypted_data.into_inner())
                         .map_err(A::Error::custom)?;
                     let mut decrypted_data: DecryptedData<T> = serde_mtproto::from_reader(decrypted_data_serialized.as_slice(), None)
                         .map_err(A::Error::custom)?;
 
-                    decrypted_data.key = self.key;
+                    decrypted_data.key = key;
 
                     Message::Decrypted {
                         decrypted_data: decrypted_data,
@@ -157,7 +158,7 @@ impl<'de, T: DeserializeOwned> DeserializeSeed<'de> for MessageSeed<T> {
         }
 
         let visitor = MessageVisitor {
-            key: self.key,
+            opt_key: self.opt_key,
             encrypted_data_len: self.encrypted_data_len,
             phantom: PhantomData,
         };
