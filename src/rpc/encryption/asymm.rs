@@ -176,7 +176,7 @@ pub fn calculate_auth_key(g: u32, dh_prime: &[u8], g_a: &[u8]) -> error::Result<
 }
 
 
-fn isqrt(x: u64) -> u64 {
+fn ceil_isqrt(x: u64) -> u64 {
     let mut ret = (x as f64).sqrt().trunc() as u64;
     while ret * ret > x { ret -= 1; }
     while ret * ret < x { ret += 1; }
@@ -184,19 +184,19 @@ fn isqrt(x: u64) -> u64 {
 }
 
 pub fn decompose_pq(pq: u64) -> error::Result<(u32, u32)> {
-    let mut pq_sqrt = isqrt(pq);
+    let mut pq_sqrt = ceil_isqrt(pq);
 
     loop {
         let y_sqr = pq_sqrt * pq_sqrt - pq;
-        if y_sqr == 0 { bail!(ErrorKind::FactorizationFailure) }
-        let y = isqrt(y_sqr);
-        if y + pq_sqrt >= pq { bail!(ErrorKind::FactorizationFailure) }
+        if y_sqr == 0 { bail!(ErrorKind::FactorizationFailureSquarePq(pq)) }
+        let y = ceil_isqrt(y_sqr);
+        if y + pq_sqrt >= pq { bail!(ErrorKind::FactorizationFailure(pq)) }
         if y * y != y_sqr {
             pq_sqrt += 1;
             continue;
         }
-        let p = (pq_sqrt + y) as u32;
-        let q = (if pq_sqrt > y { pq_sqrt - y } else { y - pq_sqrt }) as u32;
+        let p = (pq_sqrt + y) as u32; // FIXME: use safe cast here
+        let q = (if pq_sqrt > y { pq_sqrt - y } else { y - pq_sqrt }) as u32; // Same here
         return Ok(if p > q {(q, p)} else {(p, q)});
     }
 }

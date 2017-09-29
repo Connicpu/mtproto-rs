@@ -75,7 +75,7 @@ pub struct AuthKey {
     fingerprint: i64,
 }
 
-// FIXME: wait until compiler-generated Clone impls for [T; N] where N > 32 is stable
+// FIXME: wait until compiler-generated trait impls for [T; N] where N > 32 is stable
 impl Clone for AuthKey {
     fn clone(&self) -> AuthKey {
         let mut auth_key = [0; AUTH_KEY_SIZE];
@@ -130,7 +130,7 @@ impl AuthKey {
             (&mut key[len_diff..]).copy_from_slice(key_in);
         } else {
             // key shorter than key_in
-            bail!(ErrorKind::AuthKeyTooLong(key_in.to_vec()));
+            bail!(ErrorKind::AuthKeyTooLong(AUTH_KEY_SIZE, key_in.to_vec()));
         }
 
         let sha1 = sha1_bytes(&[&key])?;
@@ -167,7 +167,7 @@ impl AuthKey {
                                  message_bytes: &[u8])
                                 -> error::Result<Vec<u8>> {
         if auth_key_id != self.fingerprint {
-            bail!(ErrorKind::WrongFingerprint(auth_key_id));
+            bail!(ErrorKind::WrongFingerprint(self.fingerprint, auth_key_id));
         }
 
         let aes = self.generate_message_aes_params(message_key, symm::Mode::Decrypt)?;

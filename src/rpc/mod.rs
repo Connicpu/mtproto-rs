@@ -214,8 +214,9 @@ impl Session {
         let mut deserializer = Deserializer::new(message_bytes, None);
 
         if message_bytes.len() == 4 {
+            // Error codes seem to be represented as negative i32
             let code = i32::deserialize(&mut deserializer)?;
-            bail!(ErrorKind::ErrorCode(code));
+            bail!(ErrorKind::ErrorCode(-code));
         } else if message_bytes.len() < 24 {
             bail!(ErrorKind::BadMessage(message_bytes.len()));
         }
