@@ -56,7 +56,6 @@ macro_rules! tryf {
 }
 
 
-// For now only use ABRIDGED protocol
 fn auth(handle: Handle) -> Box<Future<Item = (), Error = error::Error>> {
     let app_id = tryf!(load_app_id());
 
@@ -72,7 +71,7 @@ fn auth(handle: Handle) -> Box<Future<Item = (), Error = error::Error>> {
             nonce: rng.gen(),
         };
 
-        let request = create_tcp_request(&mut session, socket, req_pq, MessageType::PlainText, true);
+        let request = create_tcp_request_intermediate(&mut session, socket, req_pq, MessageType::PlainText, true);
 
         request.map(|(s, b)| (s, b, session, rng))
     }).and_then(|(socket, response_bytes, mut session, mut rng)|
@@ -141,7 +140,7 @@ fn auth(handle: Handle) -> Box<Future<Item = (), Error = error::Error>> {
             encrypted_data: encrypted_data.to_vec().into(),
         };
 
-        let request = create_tcp_request(&mut session, socket, req_dh_params, MessageType::PlainText, false);
+        let request = create_tcp_request_intermediate(&mut session, socket, req_dh_params, MessageType::PlainText, false);
 
         Box::new(request.map(|(s, b)| (s, b, session, rng)))
     }).and_then(|(_socket, response_bytes, session, _rng)| {
@@ -166,12 +165,57 @@ fn load_app_id() -> error::Result<AppId> {
     Ok(app_id)
 }
 
-fn create_tcp_request<T>(session: &mut Session,
-                         socket: TcpStream,
-                         data: T,
-                         message_type: MessageType,
-                         is_first_request: bool)
-                        -> Box<Future<Item = (TcpStream, Vec<u8>), Error = error::Error>>
+fn create_tcp_request_intermediate<T>(session: &mut Session,
+                                      socket: TcpStream,
+                                      data: T,
+                                      message_type: MessageType,
+                                      is_first_request: bool)
+                                     -> Box<Future<Item = (TcpStream, Vec<u8>), Error = error::Error>>
+    where T: ::std::fmt::Debug + Serialize + Identifiable + MtProtoSized
+{
+    let message = tryf!(session.create_message(data, message_type));
+    println!("Message to send: {:#?}", &message);
+    let serialized_message = tryf!(serde_mtproto::to_bytes(&message));
+    println!("Request bytes: {:?}", &serialized_message);
+
+    let len = serialized_message.len();
+    let data = if len <= 0xff_ff_ff_ff {
+        let mut data = vec![0; 4 + len];
+
+        LittleEndian::write_u32(&mut data[0..4], len as u32);
+        data[4..].copy_from_slice(&serialized_message);
+
+        data
+    } else {
+        panic!("Message of length {} too long to send"); // FIXME
+    };
+
+    let init: Box<Future<Item = (TcpStream, &'static [u8]), Error = io::Error>> = if is_first_request {
+        Box::new(tokio_io::io::write_all(socket, b"\xee\xee\xee\xee".as_ref()))
+    } else {
+        Box::new(futures::future::ok((socket, [].as_ref())))
+    };
+
+    let request = init.and_then(|(socket, _init_bytes)| {
+        tokio_io::io::write_all(socket, data)
+    });
+
+    let response = request.and_then(|(socket, _request_bytes)| {
+        tokio_io::io::read_exact(socket, [0; 4])
+    }).and_then(|(socket, bytes_len)| {
+        let len = LittleEndian::read_u32(&bytes_len);
+        tokio_io::io::read_exact(socket, vec![0; len as usize]) // Use safe cast
+    });
+
+    Box::new(response.map_err(Into::into))
+}
+
+fn create_tcp_request_abridged<T>(session: &mut Session,
+                                  socket: TcpStream,
+                                  data: T,
+                                  message_type: MessageType,
+                                  is_first_request: bool)
+                                 -> Box<Future<Item = (TcpStream, Vec<u8>), Error = error::Error>>
     where T: ::std::fmt::Debug + Serialize + Identifiable + MtProtoSized
 {
     let message = tryf!(session.create_message(data, message_type));
