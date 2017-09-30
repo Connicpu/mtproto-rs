@@ -2,6 +2,7 @@ extern crate byteorder;
 extern crate env_logger;
 #[macro_use]
 extern crate error_chain;
+extern crate extprim;
 extern crate futures;
 extern crate hyper;
 extern crate log;
@@ -53,6 +54,11 @@ mod error {
                 description("RPC returned an HTML error")
                 display("RPC returned an HTML error with text: {}", error_text)
             }
+
+            NonceMismatch(expected: ::extprim::i128::i128, found: ::extprim::i128::i128) {
+                description("nonce mismatch")
+                display("nonce mismatch (expected {}, found {})", expected, found)
+            }
         }
     }
 }
@@ -67,8 +73,9 @@ fn auth(handle: Handle) -> error::Result<Box<Future<Item = (), Error = error::Er
     let mut rng = rand::thread_rng();
     let mut session = Session::new(rng.gen(), app_info);
 
+    let nonce = rng.gen();
     let req_pq = schema::rpc::req_pq {
-        nonce: rng.gen(),
+        nonce: nonce,
     };
 
     let http_request = create_http_request(&mut session, req_pq, MessageType::PlainText)?;
@@ -76,12 +83,11 @@ fn auth(handle: Handle) -> error::Result<Box<Future<Item = (), Error = error::Er
         let fallible = || {
             let response: Message<schema::ResPQ> = parse_response(&mut session, &response_bytes)?;
 
-            let res_pq = match response {
-                Message::PlainText { body, .. } => body.into_inner().into_inner(),
-                _ => unreachable!(),
-            };
+            let res_pq = response.unwrap_plain_text_body();
 
-            // FIXME: check nonces' equality here
+            if nonce != res_pq.nonce {
+                bail!(ErrorKind::NonceMismatch(nonce, res_pq.nonce));
+            }
 
             let pq_u64 = BigEndian::read_u64(&res_pq.pq);
             println!("Decomposing pq = {}...", pq_u64);

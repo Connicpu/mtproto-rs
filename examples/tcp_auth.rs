@@ -3,6 +3,7 @@ extern crate crc;
 extern crate env_logger;
 #[macro_use]
 extern crate error_chain;
+extern crate extprim;
 extern crate futures;
 extern crate log;
 extern crate mtproto;
@@ -19,6 +20,7 @@ use std::io::{self, Read};
 
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use crc::crc32;
+use extprim::i128;
 use futures::Future;
 use mtproto::rpc::{AppInfo, Session};
 use mtproto::rpc::message::{Message, MessageType};
@@ -43,10 +45,17 @@ mod error {
             SetLogger(::log::SetLoggerError);
             TomlDeserialize(::toml::de::Error);
         }
+
+        errors {
+            NonceMismatch(expected: ::extprim::i128::i128, found: ::extprim::i128::i128) {
+                description("nonce mismatch")
+                display("nonce mismatch (expected {}, found {})", expected, found)
+            }
+        }
     }
 }
 
-use error::ResultExt;
+use error::{ErrorKind, ResultExt};
 
 macro_rules! tryf {
     ($e:expr) => {
@@ -68,20 +77,21 @@ fn auth<P>(handle: Handle, mut protocol: P) -> Box<Future<Item = (), Error = err
     let socket = TcpStream::connect(&remote_addr, &handle).map_err(error::Error::from);
 
     let process = socket.and_then(|socket|
-        -> Box<Future<Item = (TcpStream, Vec<u8>, Session, ThreadRng, P), Error = error::Error>>
+        -> Box<Future<Item = (TcpStream, Vec<u8>, Session, ThreadRng, P, i128::i128), Error = error::Error>>
     {
         let mut rng = rand::thread_rng();
         let mut session = Session::new(rng.gen(), app_info);
 
+        let nonce = rng.gen();
         let req_pq = schema::rpc::req_pq {
-            nonce: rng.gen(),
+            nonce: nonce,
         };
 
         let serialized_message = tryf!(create_serialized_message(&mut session, req_pq, MessageType::PlainText));
         let request = protocol.request(socket, serialized_message);
 
-        Box::new(request.map(move |(s, b)| (s, b, session, rng, protocol)))
-    }).and_then(|(socket, response_bytes, mut session, mut rng, mut protocol)|
+        Box::new(request.map(move |(s, b)| (s, b, session, rng, protocol, nonce)))
+    }).and_then(|(socket, response_bytes, mut session, mut rng, mut protocol, nonce)|
         -> Box<Future<Item = (TcpStream, Vec<u8>, Session, ThreadRng, P), Error = error::Error>>
     {
         println!("Response bytes: {:?}", &response_bytes);
@@ -90,7 +100,9 @@ fn auth<P>(handle: Handle, mut protocol: P) -> Box<Future<Item = (), Error = err
 
         let res_pq = response.unwrap_plain_text_body();
 
-        // FIXME: check nonces' equality here
+        if nonce != res_pq.nonce {
+            tryf!(Err(ErrorKind::NonceMismatch(nonce, res_pq.nonce)));
+        }
 
         let pq_u64 = BigEndian::read_u64(&res_pq.pq);
         println!("Decomposing pq = {}...", pq_u64);
