@@ -5,7 +5,7 @@ extern crate log;
 extern crate mtproto;
 extern crate serde_mtproto;
 
-use mtproto::rpc::{AppId, Session};
+use mtproto::rpc::{AppInfo, Session};
 use mtproto::rpc::encryption::AuthKey;
 use mtproto::rpc::message::{Message, MessageType};
 use mtproto::schema::FutureSalt;
@@ -26,8 +26,8 @@ mod error {
 
 
 fn plain_text() -> error::Result<()> {
-    let app_id = AppId::new(9000, "random text".to_owned());
-    let mut session = Session::new(100500, app_id);
+    let app_info = AppInfo::new(9000, "random text".to_owned());
+    let mut session = Session::new(100500, app_info);
     session.adopt_key(AuthKey::new(&[0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5, 0x96, 0x87])?);
 
     let message = session.create_message(23, MessageType::PlainText)?;
@@ -43,8 +43,8 @@ fn plain_text() -> error::Result<()> {
 }
 
 fn encrypted() -> error::Result<()> {
-    let app_id = AppId::new(9000, "random text".to_owned());
-    let mut session = Session::new(100500, app_id);
+    let app_info = AppInfo::new(9000, "random text".to_owned());
+    let mut session = Session::new(100500, app_info);
     session.adopt_key(AuthKey::new(&[0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5, 0x96, 0x87])?);
 
     let future_salt = FutureSalt {

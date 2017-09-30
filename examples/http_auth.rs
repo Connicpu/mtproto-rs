@@ -18,7 +18,7 @@ use std::io::Read;
 
 use byteorder::{ByteOrder, BigEndian};
 use futures::{Future, Stream};
-use mtproto::rpc::{AppId, Session};
+use mtproto::rpc::{AppInfo, Session};
 use mtproto::rpc::encryption::asymm;
 use mtproto::rpc::message::{Message, MessageType};
 use mtproto::schema;
@@ -48,16 +48,11 @@ use error::ResultExt;
 
 
 fn auth(handle: Handle) -> error::Result<Box<Future<Item = (), Error = error::Error>>> {
+    let app_info = load_app_info()?;
     let http_client = hyper::Client::new(&handle);
 
-    let mut config_data = String::new();
-    let mut file = fs::File::open("app_id.toml")
-        .chain_err(|| "this example needs a app_id.toml file with `api_id` and `api_hash` fields in it")?;
-    file.read_to_string(&mut config_data)?;
-    let app_id: AppId = toml::from_str(&config_data)?;
-
     let mut rng = rand::thread_rng();
-    let mut session = Session::new(rng.gen(), app_id);
+    let mut session = Session::new(rng.gen(), app_info);
 
     let req_pq = schema::rpc::req_pq {
         nonce: rng.gen(),
@@ -153,6 +148,17 @@ fn auth(handle: Handle) -> error::Result<Box<Future<Item = (), Error = error::Er
     });
 
     Ok(Box::new(auth_future))
+}
+
+fn load_app_info() -> error::Result<AppInfo> {
+    let mut config_data = String::new();
+    let mut file = fs::File::open("AppInfo.toml")
+        .chain_err(|| "this example needs a AppInfo.toml file with `api_id` and `api_hash` fields in it")?;
+
+    file.read_to_string(&mut config_data)?;
+    let app_info = toml::from_str(&config_data)?;
+
+    Ok(app_info)
 }
 
 fn create_http_request<T>(session: &mut Session,

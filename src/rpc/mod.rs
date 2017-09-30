@@ -45,15 +45,15 @@ fn next_message_id() -> i64 {
 
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct AppId {
+pub struct AppInfo {
     api_id: i32,
     // FIXME: use &'static str or Cow<'static, str> here
     api_hash: String,
 }
 
-impl AppId {
-    pub fn new(api_id: i32, api_hash: String) -> AppId {
-        AppId {
+impl AppInfo {
+    pub fn new(api_id: i32, api_hash: String) -> AppInfo {
+        AppInfo {
             api_id: api_id,
             api_hash: api_hash,
         }
@@ -92,18 +92,18 @@ pub struct Session {
     seq_no: i32,
     auth_key: Option<AuthKey>,
     to_ack: Vec<i64>,
-    app_id: AppId,
+    app_info: AppInfo,
 }
 
 impl Session {
-    pub fn new(session_id: i64, app_id: AppId) -> Session {
+    pub fn new(session_id: i64, app_info: AppInfo) -> Session {
         Session {
             session_id: session_id,
             server_salts: Vec::new(),
             seq_no: 0,
             auth_key: None,
             to_ack: Vec::new(),
-            app_id: app_id,
+            app_info: app_info,
         }
     }
 

@@ -20,7 +20,7 @@ use std::io::{self, Read};
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use crc::crc32;
 use futures::Future;
-use mtproto::rpc::{AppId, Session};
+use mtproto::rpc::{AppInfo, Session};
 use mtproto::rpc::message::{Message, MessageType};
 use mtproto::rpc::encryption::asymm;
 use mtproto::schema;
@@ -61,7 +61,7 @@ macro_rules! tryf {
 fn auth<P>(handle: Handle, mut protocol: P) -> Box<Future<Item = (), Error = error::Error>>
     where P: 'static + MtProtoTcpMode
 {
-    let app_id = tryf!(load_app_id());
+    let app_info = tryf!(load_app_info());
 
     let remote_addr = "149.154.167.51:443".parse().unwrap();
     println!("Address: {:?}", &remote_addr);
@@ -71,7 +71,7 @@ fn auth<P>(handle: Handle, mut protocol: P) -> Box<Future<Item = (), Error = err
         -> Box<Future<Item = (TcpStream, Vec<u8>, Session, ThreadRng, P), Error = error::Error>>
     {
         let mut rng = rand::thread_rng();
-        let mut session = Session::new(rng.gen(), app_id);
+        let mut session = Session::new(rng.gen(), app_info);
 
         let req_pq = schema::rpc::req_pq {
             nonce: rng.gen(),
@@ -159,15 +159,15 @@ fn auth<P>(handle: Handle, mut protocol: P) -> Box<Future<Item = (), Error = err
     Box::new(process)
 }
 
-fn load_app_id() -> error::Result<AppId> {
+fn load_app_info() -> error::Result<AppInfo> {
     let mut config_data = String::new();
-    let mut file = fs::File::open("app_id.toml")
-        .chain_err(|| "this example needs a app_id.toml file with `api_id` and `api_hash` fields in it")?;
+    let mut file = fs::File::open("AppInfo.toml")
+        .chain_err(|| "this example needs a AppInfo.toml file with `api_id` and `api_hash` fields in it")?;
 
     file.read_to_string(&mut config_data)?;
-    let app_id = toml::from_str(&config_data)?;
+    let app_info = toml::from_str(&config_data)?;
 
-    Ok(app_id)
+    Ok(app_info)
 }
 
 fn create_serialized_message<T>(session: &mut Session,
