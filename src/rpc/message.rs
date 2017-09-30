@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use extprim::i128::i128;
 use serde::ser::{self, Error as SerError, Serialize};
 use serde::de::{self, DeserializeOwned, DeserializeSeed, Error as DeError, SeqAccess, Visitor};
-use serde_mtproto::{self, Boxed, WithSize, UnsizedByteBuf, UnsizedByteBufSeed};
+use serde_mtproto::{self, Boxed, Identifiable, MtProtoSized, WithSize, UnsizedByteBuf, UnsizedByteBufSeed};
 
 use error::{self, ErrorKind};
 
@@ -40,6 +40,30 @@ pub struct DecryptedData<T> {
 
     #[serde(skip)]
     pub(super) key: AuthKey,
+}
+
+impl<T: Identifiable + MtProtoSized> Message<T> {
+    pub fn into_plain_text_body(self) -> Option<T> {
+        match self {
+            Message::PlainText { body, .. } => Some(body.into_inner().into_inner()),
+            Message::Decrypted { .. } => None,
+        }
+    }
+
+    pub fn unwrap_plain_text_body(self) -> T {
+        self.into_plain_text_body().expect("`Message::PlainText` variant")
+    }
+
+    pub fn into_decrypted_body(self) -> Option<T> {
+        match self {
+            Message::PlainText { .. } => None,
+            Message::Decrypted { decrypted_data } => Some(decrypted_data.body.into_inner().into_inner()),
+        }
+    }
+
+    pub fn unwrap_decrypted_body(self) -> T {
+        self.into_decrypted_body().expect("`Message::Decrypted` variant")
+    }
 }
 
 impl<T: Serialize> Serialize for Message<T> {

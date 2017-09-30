@@ -88,10 +88,7 @@ fn auth<P>(handle: Handle, mut protocol: P) -> Box<Future<Item = (), Error = err
         let response: Message<schema::ResPQ> = tryf!(session.process_message(&response_bytes));
         println!("Message received: {:#?}", &response);
 
-        let res_pq = match response {
-            Message::PlainText { body, .. } => body.into_inner().into_inner(),
-            _ => unreachable!(),
-        };
+        let res_pq = response.unwrap_plain_text_body();
 
         // FIXME: check nonces' equality here
 
