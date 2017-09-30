@@ -106,8 +106,9 @@ impl RsaPublicKey {
     }
 
     pub fn encrypt(&self, input: &[u8]) -> error::Result<[u8; 256]> {
-        let mut padded_input = sha1_and_or_pad(input, true, Padding::Total255)?;
+        let mut padded_input = sha1_and_or_pad(input, true, Padding::Total255Random)?;
         padded_input.insert(0, 0);    // OpenSSL requires exactly 256 bytes
+        println!("*** Padded input: {:?}", &padded_input);
 
         let mut output = [0; 256];
         self.0.public_encrypt(&padded_input, &mut output, rsa::NO_PADDING)?;
@@ -119,7 +120,8 @@ impl RsaPublicKey {
     // `encrypt()`. Also can be served as a drop-in replacement in case if we abandon OpenSSL
     // dependency after rewriting this method to use `num_bigint::BigUInt`.
     pub fn encrypt2(&self, input: &[u8]) -> error::Result<Vec<u8>> {
-        let padded_input = sha1_and_or_pad(input, true, Padding::Total255)?;
+        let padded_input = sha1_and_or_pad(input, true, Padding::Total255Random)?;
+        println!("!!! Padded input: {:?}", &padded_input);
 
         let n = self.0.n().ok_or(error::Error::from(ErrorKind::NoModulus))?;
         let e = self.0.e().ok_or(error::Error::from(ErrorKind::NoExponent))?;

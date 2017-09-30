@@ -7,9 +7,10 @@ use std::io::{Cursor, Write};
 use byteorder::{ByteOrder, LittleEndian};
 use extprim::i128::i128;
 use openssl::{aes, symm};
+use rand::{self, Rng};
 
 use error::{self, ErrorKind};
-use rpc::{sha1_bytes};
+use rpc::sha1_bytes;
 
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -207,39 +208,39 @@ impl AuthKey {
 // Utils
 
 enum Padding {
-    Total255,
+    Total255Random,
     Mod16,
 }
 
 fn sha1_and_or_pad(input: &[u8], prepend_sha1: bool, padding: Padding) -> error::Result<Vec<u8>> {
-    let mut ret = if prepend_sha1 {
+    let mut result = if prepend_sha1 {
         sha1_bytes(&[input])?
     } else {
         vec![]
     };
 
-    ret.extend(input);
+    result.extend(input);
 
     match padding {
-        Padding::Total255 => {
-            if ret.len() > 255 {
+        Padding::Total255Random => {
+            if result.len() > 255 {
                 bail!(ErrorKind::Sha1Total255Longer);
             }
 
-            while ret.len() < 255 {
-                ret.push(0);
-            }
+            let old_len = result.len();
+            result.resize(255, 0);
+
+            let mut rng = rand::thread_rng();
+            rng.fill_bytes(&mut result[old_len..]);
         },
-        Padding::Mod16 if ret.len() % 16 != 0 => {
-            for _ in 0..16 - (ret.len() % 16) {
-                ret.push(0);
-            }
+        Padding::Mod16 => {
+            let old_len = result.len();
+            let new_len = old_len + (16 - (old_len % 16)) % 16; // == ceil_div(old_len, 16) * 16
+            result.resize(new_len, 0);
         },
-        // In case if new variants will be added
-        _ => (),
     }
 
-    Ok(ret)
+    Ok(result)
 }
 
 fn set_slice_parts(result: &mut [u8], parts: &[&[u8]]) {
