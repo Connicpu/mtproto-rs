@@ -7,6 +7,7 @@ extern crate hyper;
 extern crate log;
 extern crate mtproto;
 extern crate rand;
+extern crate select;
 extern crate serde;
 extern crate serde_mtproto;
 extern crate tokio_core;
@@ -15,6 +16,7 @@ extern crate toml;
 
 use std::fs;
 use std::io::Read;
+use std::str;
 
 use byteorder::{ByteOrder, BigEndian};
 use futures::{Future, Stream};
@@ -23,7 +25,10 @@ use mtproto::rpc::encryption::asymm;
 use mtproto::rpc::message::{Message, MessageType};
 use mtproto::schema;
 use rand::Rng;
+use select::document::Document;
+use select::predicate::Name;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_mtproto::{Identifiable, MtProtoSized};
 use tokio_core::reactor::{Core, Handle};
 
@@ -40,11 +45,19 @@ mod error {
             Io(::std::io::Error);
             SetLogger(::log::SetLoggerError);
             TomlDeserialize(::toml::de::Error);
+            Utf8(::std::str::Utf8Error);
+        }
+
+        errors {
+            HtmlErrorText(error_text: String) {
+                description("RPC returned an HTML error")
+                display("RPC returned an HTML error with text: {}", error_text)
+            }
         }
     }
 }
 
-use error::ResultExt;
+use error::{ErrorKind, ResultExt};
 
 
 fn auth(handle: Handle) -> error::Result<Box<Future<Item = (), Error = error::Error>>> {
@@ -61,9 +74,7 @@ fn auth(handle: Handle) -> error::Result<Box<Future<Item = (), Error = error::Er
     let http_request = create_http_request(&mut session, req_pq, MessageType::PlainText)?;
     let auth_future = future_request(&http_client, http_request).and_then(move |response_bytes| {
         let fallible = || {
-            println!("Response bytes: {:?}", &response_bytes);
-            let response: Message<schema::ResPQ> = session.process_message(&response_bytes)?;
-            println!("Message received: {:#?}", &response);
+            let response: Message<schema::ResPQ> = parse_response(&mut session, &response_bytes)?;
 
             let res_pq = match response {
                 Message::PlainText { body, .. } => body.into_inner().into_inner(),
@@ -135,11 +146,9 @@ fn auth(handle: Handle) -> error::Result<Box<Future<Item = (), Error = error::Er
         futures::future::result(fallible()).and_then(move |(http_request, session)| {
             future_request(&http_client, http_request).map(|bytes| (bytes, session))
         })
-    }).and_then(|(response_bytes, session)| {
-        let fallible = || {
-            println!("Response bytes: {:?}", &response_bytes);
-            let response: Message<schema::Server_DH_Params> = session.process_message(&response_bytes)?;
-            println!("Message received: {:#?}", &response);
+    }).and_then(|(response_bytes, mut session)| {
+        let mut fallible = || {
+            let _: Message<schema::Server_DH_Params> = parse_response(&mut session, &response_bytes)?;
 
             Ok(())
         };
@@ -159,6 +168,30 @@ fn load_app_info() -> error::Result<AppInfo> {
     let app_info = toml::from_str(&config_data)?;
 
     Ok(app_info)
+}
+
+fn parse_response<T>(session: &mut Session, response_bytes: &[u8]) -> error::Result<Message<T>>
+    where T: ::std::fmt::Debug + DeserializeOwned
+{
+    println!("Response bytes: {:?}", &response_bytes);
+
+    if &response_bytes[0..6] == b"<html>" {
+        let len = response_bytes.len();
+        assert_eq!(&response_bytes[len-9..], b"</html>\r\n");
+
+        let response_str = str::from_utf8(response_bytes)?;
+        let doc = Document::from(response_str);
+        println!("HTML error response:\n{}", response_str);
+
+        let error_text = doc.find(Name("h1")).next().unwrap().text(); // FIXME: unwrap()
+
+        bail!(ErrorKind::HtmlErrorText(error_text));
+    }
+
+    let response = session.process_message(&response_bytes)?;
+    println!("Message received: {:#?}", &response);
+
+    Ok(response)
 }
 
 fn create_http_request<T>(session: &mut Session,
