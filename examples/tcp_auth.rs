@@ -59,7 +59,7 @@ macro_rules! tryf {
 
 
 fn auth<P>(handle: Handle, mut protocol: P) -> Box<Future<Item = (), Error = error::Error>>
-    where P: 'static + MtProtoProtocol
+    where P: 'static + MtProtoTcpMode
 {
     let app_id = tryf!(load_app_id());
 
@@ -188,22 +188,22 @@ fn create_serialized_message<T>(session: &mut Session,
 }
 
 
-trait MtProtoProtocol {
+trait MtProtoTcpMode {
     fn request(&mut self, socket: TcpStream, serialized_message: Vec<u8>)
         -> Box<Future<Item = (TcpStream, Vec<u8>), Error = error::Error>>;
 }
 
-struct FullProtocol {
+struct FullMode {
     send_counter: u32,
 }
 
-impl FullProtocol {
-    fn new() -> FullProtocol {
-        FullProtocol { send_counter: 0 }
+impl FullMode {
+    fn new() -> FullMode {
+        FullMode { send_counter: 0 }
     }
 }
 
-impl MtProtoProtocol for FullProtocol {
+impl MtProtoTcpMode for FullMode {
     fn request(&mut self, socket: TcpStream, serialized_message: Vec<u8>)
         -> Box<Future<Item = (TcpStream, Vec<u8>), Error = error::Error>>
     {
@@ -257,17 +257,17 @@ impl MtProtoProtocol for FullProtocol {
     }
 }
 
-struct IntermediateProtocol {
+struct IntermediateMode {
     is_first_request: bool,
 }
 
-impl IntermediateProtocol {
-    fn new() -> IntermediateProtocol {
-        IntermediateProtocol { is_first_request: true }
+impl IntermediateMode {
+    fn new() -> IntermediateMode {
+        IntermediateMode { is_first_request: true }
     }
 }
 
-impl MtProtoProtocol for IntermediateProtocol {
+impl MtProtoTcpMode for IntermediateMode {
     fn request(&mut self, socket: TcpStream, serialized_message: Vec<u8>)
         -> Box<Future<Item = (TcpStream, Vec<u8>), Error = error::Error>>
     {
@@ -305,17 +305,17 @@ impl MtProtoProtocol for IntermediateProtocol {
     }
 }
 
-struct AbridgedProtocol {
+struct AbridgedMode {
     is_first_request: bool,
 }
 
-impl AbridgedProtocol {
-    fn new() -> AbridgedProtocol {
-        AbridgedProtocol { is_first_request: true }
+impl AbridgedMode {
+    fn new() -> AbridgedMode {
+        AbridgedMode { is_first_request: true }
     }
 }
 
-impl MtProtoProtocol for AbridgedProtocol {
+impl MtProtoTcpMode for AbridgedMode {
     fn request(&mut self, socket: TcpStream, serialized_message: Vec<u8>)
         -> Box<Future<Item = (TcpStream, Vec<u8>), Error = error::Error>>
     {
@@ -365,13 +365,13 @@ fn run() -> error::Result<()> {
     env_logger::init()?;
     let mut core = Core::new()?;
 
-    let auth_future = auth(core.handle(), AbridgedProtocol::new());
+    let auth_future = auth(core.handle(), AbridgedMode::new());
     core.run(auth_future)?;
 
-    let auth_future = auth(core.handle(), IntermediateProtocol::new());
+    let auth_future = auth(core.handle(), IntermediateMode::new());
     core.run(auth_future)?;
 
-    let auth_future = auth(core.handle(), FullProtocol::new());
+    let auth_future = auth(core.handle(), FullMode::new());
     core.run(auth_future)?;
 
     Ok(())
