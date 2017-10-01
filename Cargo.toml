@@ -16,8 +16,9 @@ rand = "0.3"
 serde = "1.0"
 serde_bytes = "0.10"
 serde_derive = "1.0"
-serde_mtproto = { git = "https://github.com/hcpl/serde_mtproto" }
+serde_mtproto = { git = "https://github.com/hcpl/serde_mtproto", features = ["extprim"] }
 serde_mtproto_derive = { git = "https://github.com/hcpl/serde_mtproto" }
+toml = "0.4"
 
 [build-dependencies]
 tl_codegen = { path = "tl_codegen", features = ["printing"] }
@@ -31,4 +32,3 @@ log = "0.3"
 select = "0.4"
 tokio-core = "0.1"
 tokio-io = "0.1"
-toml = "0.4"

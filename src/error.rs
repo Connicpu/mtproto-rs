@@ -7,6 +7,7 @@ error_chain! {
         Io(::std::io::Error);
         FromUtf8(::std::string::FromUtf8Error);
         OpenSsl(::openssl::error::ErrorStack);
+        TomlDeserialize(::toml::de::Error);
     }
 
     errors {

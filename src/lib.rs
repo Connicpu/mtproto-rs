@@ -16,6 +16,7 @@ extern crate serde_derive;
 extern crate serde_mtproto;
 #[macro_use]
 extern crate serde_mtproto_derive;
+extern crate toml;
 
 /*pub mod error {
     error_chain! {

@@ -12,11 +12,8 @@ extern crate select;
 extern crate serde;
 extern crate serde_mtproto;
 extern crate tokio_core;
-extern crate toml;
 
 
-use std::fs;
-use std::io::Read;
 use std::str;
 
 use byteorder::{ByteOrder, BigEndian};
@@ -45,7 +42,6 @@ mod error {
             Hyper(::hyper::Error);
             Io(::std::io::Error);
             SetLogger(::log::SetLoggerError);
-            TomlDeserialize(::toml::de::Error);
             Utf8(::std::str::Utf8Error);
         }
 
@@ -67,7 +63,9 @@ use error::{ErrorKind, ResultExt};
 
 
 fn auth(handle: Handle) -> error::Result<Box<Future<Item = (), Error = error::Error>>> {
-    let app_info = load_app_info()?;
+    let app_info = AppInfo::load_from_toml_file("AppInfo.toml")
+        .chain_err(|| "this example needs a AppInfo.toml file with `api_id` and `api_hash` fields in it")?;
+
     let http_client = hyper::Client::new(&handle);
 
     let mut rng = rand::thread_rng();
@@ -163,17 +161,6 @@ fn auth(handle: Handle) -> error::Result<Box<Future<Item = (), Error = error::Er
     });
 
     Ok(Box::new(auth_future))
-}
-
-fn load_app_info() -> error::Result<AppInfo> {
-    let mut config_data = String::new();
-    let mut file = fs::File::open("AppInfo.toml")
-        .chain_err(|| "this example needs a AppInfo.toml file with `api_id` and `api_hash` fields in it")?;
-
-    file.read_to_string(&mut config_data)?;
-    let app_info = toml::from_str(&config_data)?;
-
-    Ok(app_info)
 }
 
 fn parse_response<T>(session: &mut Session, response_bytes: &[u8]) -> error::Result<Message<T>>

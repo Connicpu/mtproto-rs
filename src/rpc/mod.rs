@@ -1,10 +1,14 @@
 use std::cmp;
+use std::fs::File;
+use std::io::Read;
+use std::path::Path;
 
 use chrono::{DateTime, Timelike, TimeZone, Utc};
 use erased_serde::Serialize as ErasedSerialize;
 use openssl::hash;
 use serde::de::{Deserialize, DeserializeSeed, DeserializeOwned};
 use serde_mtproto::{Boxed, Identifiable, MtProtoSized, WithSize};
+use toml;
 
 use error::{self, ErrorKind};
 use schema::FutureSalt;
@@ -58,7 +62,26 @@ impl AppInfo {
             api_hash: api_hash,
         }
     }
+
+    pub fn load_from_toml(value: toml::Value) -> error::Result<AppInfo> {
+        AppInfo::deserialize(value).map_err(Into::into)
+    }
+
+    pub fn load_from_toml_str(s: &str) -> error::Result<AppInfo> {
+        toml::from_str(s).map_err(Into::into)
+    }
+
+    pub fn load_from_toml_file<P: AsRef<Path>>(path: P) -> error::Result<AppInfo> {
+        let mut buf = String::new();
+        let mut file = File::open(path)?;
+
+        file.read_to_string(&mut buf)?;
+        let app_info = toml::from_str(&buf)?;
+
+        Ok(app_info)
+    }
 }
+
 
 #[derive(Debug, Clone)]
 pub struct Salt {
