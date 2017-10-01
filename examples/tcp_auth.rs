@@ -74,7 +74,7 @@ fn auth<P>(handle: Handle, mut protocol: P) -> Box<Future<Item = (), Error = err
     println!("Address: {:?}", &remote_addr);
     let socket = TcpStream::connect(&remote_addr, &handle).map_err(error::Error::from);
 
-    let process = socket.and_then(|socket|
+    let auth_future = socket.and_then(|socket|
         -> Box<Future<Item = (TcpStream, Vec<u8>, Session, ThreadRng, P, i128::i128), Error = error::Error>>
     {
         let mut rng = rand::thread_rng();
@@ -166,7 +166,7 @@ fn auth<P>(handle: Handle, mut protocol: P) -> Box<Future<Item = (), Error = err
         Box::new(futures::future::ok(()))
     });
 
-    Box::new(process)
+    Box::new(auth_future)
 }
 
 fn create_serialized_message<T>(session: &mut Session,
