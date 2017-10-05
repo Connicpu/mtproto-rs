@@ -26,6 +26,7 @@ use mtproto::rpc::encryption::asymm;
 use mtproto::schema;
 use rand::{Rng, ThreadRng};
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_mtproto::{Identifiable, MtProtoSized};
 use tokio_core::net::TcpStream;
 use tokio_core::reactor::{Core, Handle};
@@ -48,6 +49,16 @@ mod error {
                 description("nonce mismatch")
                 display("nonce mismatch (expected {}, found {})", expected, found)
             }
+
+            ErrorCode(code: i32) {
+                description("RPC returned an error code")
+                display("RPC returned a {} error code", code)
+            }
+
+            BadMessage(found_len: usize) {
+                description("Message length is neither 4, nor >= 24 bytes")
+                display("Message length is neither 4, nor >= 24 bytes: {}", found_len)
+            }
         }
     }
 }
@@ -60,6 +71,12 @@ macro_rules! tryf {
             Ok(v) => v,
             Err(e) => return Box::new(futures::future::err(e.into())),
         }
+    }
+}
+
+macro_rules! bailf {
+    ($e:expr) => {
+        tryf!(Err($e))
     }
 }
 
@@ -92,14 +109,12 @@ fn auth<P>(handle: Handle, mut protocol: P) -> Box<Future<Item = (), Error = err
     }).and_then(|(socket, response_bytes, mut session, mut rng, mut protocol, nonce)|
         -> Box<Future<Item = (TcpStream, Vec<u8>, Session, ThreadRng, P), Error = error::Error>>
     {
-        println!("Response bytes: {:?}", &response_bytes);
-        let response: Message<schema::ResPQ> = tryf!(session.process_message(&response_bytes));
-        println!("Message received: {:#?}", &response);
+        let response: Message<schema::ResPQ> = tryf!(parse_response(&session, &response_bytes));
 
         let res_pq = response.unwrap_plain_text_body();
 
         if nonce != res_pq.nonce {
-            tryf!(Err(ErrorKind::NonceMismatch(nonce, res_pq.nonce)));
+            bailf!(ErrorKind::NonceMismatch(nonce, res_pq.nonce));
         }
 
         let pq_u64 = BigEndian::read_u64(&res_pq.pq);
@@ -159,9 +174,7 @@ fn auth<P>(handle: Handle, mut protocol: P) -> Box<Future<Item = (), Error = err
 
         Box::new(request.map(move |(s, b)| (s, b, session, rng, protocol)))
     }).and_then(|(_socket, response_bytes, session, _rng, _protocol)| {
-        println!("Response bytes: {:?}", &response_bytes);
-        let response: Message<schema::Server_DH_Params> = tryf!(session.process_message(&response_bytes));
-        println!("Message received: {:#?}", &response);
+        let _: Message<schema::Server_DH_Params> = tryf!(parse_response(&session, &response_bytes));
 
         Box::new(futures::future::ok(()))
     });
@@ -181,6 +194,29 @@ fn create_serialized_message<T>(session: &mut Session,
     println!("Request bytes: {:?}", &serialized_message);
 
     Ok(serialized_message)
+}
+
+fn parse_response<T>(session: &Session, response_bytes: &[u8]) -> error::Result<Message<T>>
+    where T: ::std::fmt::Debug + DeserializeOwned
+{
+    println!("Response bytes: {:?}", &response_bytes);
+
+    let len = response_bytes.len();
+
+    if len == 4 { // Must be an error code
+        // Error codes are represented as negative i32
+        let code = LittleEndian::read_i32(response_bytes);
+        bail!(ErrorKind::ErrorCode(-code));
+    } else if len < 24 {
+        bail!(ErrorKind::BadMessage(len));
+    }
+
+    // We're being simplistic here, i.e. we actually should pass None if the message is plain-text
+    let encrypted_data_len = Some((len - 24) as u32);
+    let response = session.process_message(&response_bytes, encrypted_data_len)?;
+    println!("Message received: {:#?}", &response);
+
+    Ok(response)
 }
 
 

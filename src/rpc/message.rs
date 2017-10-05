@@ -103,12 +103,12 @@ impl<T: Serialize> Serialize for Message<T> {
 #[derive(Debug)]
 pub struct MessageSeed<T> {
     opt_key: Option<AuthKey>,
-    encrypted_data_len: u32,
+    encrypted_data_len: Option<u32>,
     phantom: PhantomData<T>,
 }
 
 impl<T: DeserializeOwned> MessageSeed<T> {
-    pub fn new(opt_key: Option<AuthKey>, encrypted_data_len: u32) -> MessageSeed<T> {
+    pub fn new(opt_key: Option<AuthKey>, encrypted_data_len: Option<u32>) -> MessageSeed<T> {
         MessageSeed {
             opt_key: opt_key,
             encrypted_data_len: encrypted_data_len,
@@ -125,7 +125,7 @@ impl<'de, T: DeserializeOwned> DeserializeSeed<'de> for MessageSeed<T> {
     {
         struct MessageVisitor<T> {
             opt_key: Option<AuthKey>,
-            encrypted_data_len: u32,
+            encrypted_data_len: Option<u32>,
             phantom: PhantomData<T>,
         }
 
@@ -143,7 +143,7 @@ impl<'de, T: DeserializeOwned> DeserializeSeed<'de> for MessageSeed<T> {
                 let errconv = |kind: ErrorKind| A::Error::custom(error::Error::from(kind));
 
                 let auth_key_id = seq.next_element()?
-                    .ok_or(errconv(ErrorKind::NotEnoughFields("Message", 0)))?;
+                    .ok_or(errconv(ErrorKind::NotEnoughFields("Message::?", 0)))?;
 
                 let message = if auth_key_id == 0 {
                     let message_id = seq.next_element()?
@@ -156,10 +156,14 @@ impl<'de, T: DeserializeOwned> DeserializeSeed<'de> for MessageSeed<T> {
                         body: body.into_owned().unwrap(),    // we know it's owned here
                     }
                 } else {
+                    if self.encrypted_data_len.is_none() {
+                        bail!(errconv(ErrorKind::NoEncryptedDataLengthProvided));
+                    }
+
                     let message_key = seq.next_element()?
                         .ok_or(errconv(ErrorKind::NotEnoughFields("Message::Decrypted", 1)))?;
 
-                    let seed = UnsizedByteBufSeed::new(self.encrypted_data_len);
+                    let seed = UnsizedByteBufSeed::new(self.encrypted_data_len.unwrap());
                     let encrypted_data = seq.next_element_seed(seed)?
                         .ok_or(errconv(ErrorKind::NotEnoughFields("Message::Decrypted", 2)))?;
 

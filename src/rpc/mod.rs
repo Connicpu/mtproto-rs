@@ -221,7 +221,6 @@ impl Session {
             key: self.fresh_auth_key()?,
         };
 
-        // FIXME: implement
         let message = Message::Decrypted {
             decrypted_data: decrypted_data,
         };
@@ -229,23 +228,14 @@ impl Session {
         Ok(message)
     }
 
-    pub fn process_message<T>(&self, message_bytes: &[u8]) -> error::Result<Message<T>>
+    pub fn process_message<T>(&self, message_bytes: &[u8], encrypted_data_len: Option<u32>) -> error::Result<Message<T>>
         where T: DeserializeOwned
     {
         use serde_mtproto::Deserializer;
 
         let mut deserializer = Deserializer::new(message_bytes, None);
+        let seed = MessageSeed::new(self.auth_key.clone(), encrypted_data_len);
 
-        if message_bytes.len() == 4 {
-            // Error codes seem to be represented as negative i32
-            let code = i32::deserialize(&mut deserializer)?;
-            bail!(ErrorKind::ErrorCode(-code));
-        } else if message_bytes.len() < 24 {
-            bail!(ErrorKind::BadMessage(message_bytes.len()));
-        }
-
-        // FIXME: use safe casts here
-        let seed = MessageSeed::new(self.auth_key.clone(), (message_bytes.len() - 24) as u32);
         seed.deserialize(&mut deserializer).map_err(Into::into)
     }
 }

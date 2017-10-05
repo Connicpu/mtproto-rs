@@ -192,7 +192,7 @@ pub fn decompose_pq(pq: u64) -> error::Result<(u32, u32)> {
         let y_sqr = pq_sqrt * pq_sqrt - pq;
         if y_sqr == 0 { bail!(ErrorKind::FactorizationFailureSquarePq(pq)) }
         let y = ceil_isqrt(y_sqr);
-        if y + pq_sqrt >= pq { bail!(ErrorKind::FactorizationFailure(pq)) }
+        if y + pq_sqrt >= pq { bail!(ErrorKind::FactorizationFailureOther(pq)) }
         if y * y != y_sqr {
             pq_sqrt += 1;
             continue;

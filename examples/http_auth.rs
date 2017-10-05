@@ -46,14 +46,19 @@ mod error {
         }
 
         errors {
+            NonceMismatch(expected: ::extprim::i128::i128, found: ::extprim::i128::i128) {
+                description("nonce mismatch")
+                display("nonce mismatch (expected {}, found {})", expected, found)
+            }
+
             HtmlErrorText(error_text: String) {
                 description("RPC returned an HTML error")
                 display("RPC returned an HTML error with text: {}", error_text)
             }
 
-            NonceMismatch(expected: ::extprim::i128::i128, found: ::extprim::i128::i128) {
-                description("nonce mismatch")
-                display("nonce mismatch (expected {}, found {})", expected, found)
+            BadMessage(found_len: usize) {
+                description("Message is not HTML error and is < 24 bytes long")
+                display("Message is not HTML error and is {} < 24 bytes long", found_len)
             }
         }
     }
@@ -67,6 +72,12 @@ macro_rules! tryf {
             Ok(v) => v,
             Err(e) => return Box::new(futures::future::err(e.into())),
         }
+    }
+}
+
+macro_rules! bailf {
+    ($e:expr) => {
+        tryf!(Err($e))
     }
 }
 
@@ -94,7 +105,7 @@ fn auth(handle: Handle) -> Box<Future<Item = (), Error = error::Error>> {
         let res_pq = response.unwrap_plain_text_body();
 
         if nonce != res_pq.nonce {
-            tryf!(Err(ErrorKind::NonceMismatch(nonce, res_pq.nonce)));
+            bailf!(ErrorKind::NonceMismatch(nonce, res_pq.nonce));
         }
 
         let pq_u64 = BigEndian::read_u64(&res_pq.pq);
@@ -156,10 +167,7 @@ fn auth(handle: Handle) -> Box<Future<Item = (), Error = error::Error>> {
 
         Box::new(future_request(&http_client, http_request).map(|bytes| (bytes, session)))
     }).and_then(|(response_bytes, mut session)| {
-        println!("Response bytes: {:?}", &response_bytes);
-        let response: Message<schema::Server_DH_Params> =
-            tryf!(parse_response(&mut session, &response_bytes));
-        println!("Message received: {:#?}", &response);
+        let _: Message<schema::Server_DH_Params> = tryf!(parse_response(&mut session, &response_bytes));
 
         Box::new(futures::future::ok(()))
     });
@@ -172,8 +180,10 @@ fn parse_response<T>(session: &mut Session, response_bytes: &[u8]) -> error::Res
 {
     println!("Response bytes: {:?}", &response_bytes);
 
-    if &response_bytes[0..6] == b"<html>" {
-        let len = response_bytes.len();
+    let len = response_bytes.len();
+
+    if len >= 6 && &response_bytes[0..6] == b"<html>" {
+        // FIXME: Only depend on </html> closing tag, but whitespaces after it!
         assert_eq!(&response_bytes[len-9..], b"</html>\r\n");
 
         let response_str = str::from_utf8(response_bytes)?;
@@ -183,9 +193,13 @@ fn parse_response<T>(session: &mut Session, response_bytes: &[u8]) -> error::Res
         let error_text = doc.find(Name("h1")).next().unwrap().text(); // FIXME: unwrap()
 
         bail!(ErrorKind::HtmlErrorText(error_text));
+    } else if len < 24 {
+        bail!(ErrorKind::BadMessage(len));
     }
 
-    let response = session.process_message(&response_bytes)?;
+    // We're being simplistic here, i.e. we actually should pass None if the message is plain-text
+    let encrypted_data_len = Some((len - 24) as u32);
+    let response = session.process_message(&response_bytes, encrypted_data_len)?;
     println!("Message received: {:#?}", &response);
 
     Ok(response)

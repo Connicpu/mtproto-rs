@@ -54,19 +54,14 @@ error_chain! {
             display("No exponent found from a RSA key")
         }
 
-        ErrorCode(code: i32) {
-            description("RPC returned an error code")
-            display("RPC returned a {} error code", code)
-        }
-
         FactorizationFailureSquarePq(pq: u64) {
-            description("factorization failed: pq is a square number")
-            display("factorization failed: pq = {} is a square number", pq)
+            description("Factorization failed: pq is a square number")
+            display("Factorization failed: pq = {} is a square number", pq)
         }
 
-        FactorizationFailure(pq: u64) {
-            description("factorization failed")
-            display("factorization failed: pq = {}", pq)
+        FactorizationFailureOther(pq: u64) {
+            description("Factorization failed: other reason")
+            display("Factorization failed: other reason (pq = {})", pq)
         }
 
         NoAuthKey {
@@ -74,9 +69,9 @@ error_chain! {
             display("Authorization key not found")
         }
 
-        BadMessage(found_len: usize) {
-            description("Message length is neither 4, nor >= 24 bytes")
-            display("Message length is neither 4, nor >= 24 bytes: {}", found_len)
+        NoEncryptedDataLengthProvided {
+            description("No encrypted data length provided to deserialize an encrypted message")
+            display("No encrypted data length provided to deserialize an encrypted message")
         }
     }
 }
