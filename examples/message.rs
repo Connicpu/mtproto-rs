@@ -27,15 +27,14 @@ mod error {
 
 fn plain_text() -> error::Result<()> {
     let app_info = AppInfo::new(9000, "random text".to_owned());
-    let mut session = Session::new(100500, app_info);
-    session.adopt_key(AuthKey::new(&[0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5, 0x96, 0x87])?);
+    let mut session = Session::new(892103, app_info);
 
     let message = session.create_message(23, MessageType::PlainText)?;
-    println!("{:?}", message);
+    println!("{:#?}", message);
     let bytes = serde_mtproto::to_bytes(&message)?;
     println!("{:?}", bytes);
-    let msg: Message<i32> = session.process_message(&bytes)?;
-    println!("{:?}", msg);
+    let msg: Message<i32> = session.process_message(&bytes, None)?;
+    println!("{:#?}", msg);
 
     assert_eq!(message, msg);
 
@@ -44,7 +43,7 @@ fn plain_text() -> error::Result<()> {
 
 fn encrypted() -> error::Result<()> {
     let app_info = AppInfo::new(9000, "random text".to_owned());
-    let mut session = Session::new(100500, app_info);
+    let mut session = Session::new(892103, app_info);
     session.adopt_key(AuthKey::new(&[0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5, 0x96, 0x87])?);
 
     let future_salt = FutureSalt {
@@ -58,7 +57,7 @@ fn encrypted() -> error::Result<()> {
     println!("{:?}", message);
     let bytes = serde_mtproto::to_bytes(&message)?;
     println!("{:?}", bytes);
-    let msg: Message<i32> = session.process_message(&bytes)?;
+    let msg: Message<i32> = session.process_message(&bytes, Some(24))?;
     println!("{:?}", msg);
 
     assert_eq!(message, msg);
