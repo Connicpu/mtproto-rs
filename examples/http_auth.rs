@@ -60,24 +60,29 @@ mod error {
                 description("Message is not HTML error and is < 24 bytes long")
                 display("Message is not HTML error and is {} < 24 bytes long", found_len)
             }
+
+            UnknownHtmlErrorStructure(html: String) {
+                description("Unknown HTML error structure")
+                display("Unknown HTML error structure:\n{}", html)
+            }
         }
     }
 }
 
 use error::{ErrorKind, ResultExt};
 
+macro_rules! bailf {
+    ($e:expr) => {
+        return Box::new(futures::future::err($e.into()))
+    }
+}
+
 macro_rules! tryf {
     ($e:expr) => {
         match { $e } {
             Ok(v) => v,
-            Err(e) => return Box::new(futures::future::err(e.into())),
+            Err(e) => bailf!(e),
         }
-    }
-}
-
-macro_rules! bailf {
-    ($e:expr) => {
-        tryf!(Err($e))
     }
 }
 
@@ -180,20 +185,27 @@ fn parse_response<T>(session: &mut Session, response_bytes: &[u8]) -> error::Res
 {
     println!("Response bytes: {:?}", &response_bytes);
 
+    if let Ok(response_str) = str::from_utf8(response_bytes) {
+        let response_str = response_str.trim();
+        let str_len = response_str.len();
+
+        if str_len >= 7 && &response_str[0..6] == "<html>" && &response_str[str_len-7..] == "</html>" {
+            let response_str = str::from_utf8(response_bytes)?;
+            let doc = Document::from(response_str);
+            println!("HTML error response:\n{}", response_str);
+
+            let error_text = match doc.find(Name("h1")).next() {
+                Some(elem) => elem.text(),
+                None => bail!(ErrorKind::UnknownHtmlErrorStructure(response_str.to_owned())),
+            };
+
+            bail!(ErrorKind::HtmlErrorText(error_text));
+        }
+    }
+
     let len = response_bytes.len();
 
-    if len >= 6 && &response_bytes[0..6] == b"<html>" {
-        // FIXME: Only depend on </html> closing tag, but whitespaces after it!
-        assert_eq!(&response_bytes[len-9..], b"</html>\r\n");
-
-        let response_str = str::from_utf8(response_bytes)?;
-        let doc = Document::from(response_str);
-        println!("HTML error response:\n{}", response_str);
-
-        let error_text = doc.find(Name("h1")).next().unwrap().text(); // FIXME: unwrap()
-
-        bail!(ErrorKind::HtmlErrorText(error_text));
-    } else if len < 24 {
+    if len < 24 {
         bail!(ErrorKind::BadMessage(len));
     }
 

@@ -59,24 +59,29 @@ mod error {
                 description("Message length is neither 4, nor >= 24 bytes")
                 display("Message length is neither 4, nor >= 24 bytes: {}", found_len)
             }
+
+            MessageTooLong(len: usize) {
+                description("Message too long to send")
+                display("Message of length {} too long to send", len)
+            }
         }
     }
 }
 
 use error::{ErrorKind, ResultExt};
 
+macro_rules! bailf {
+    ($e:expr) => {
+        return Box::new(futures::future::err($e.into()))
+    }
+}
+
 macro_rules! tryf {
     ($e:expr) => {
         match { $e } {
             Ok(v) => v,
-            Err(e) => return Box::new(futures::future::err(e.into())),
+            Err(e) => bailf!(e),
         }
-    }
-}
-
-macro_rules! bailf {
-    ($e:expr) => {
-        tryf!(Err($e))
     }
 }
 
@@ -254,7 +259,7 @@ impl MtProtoTcpMode for FullMode {
 
             data
         } else {
-            panic!("Message of length {} too long to send"); // FIXME
+            bailf!(ErrorKind::MessageTooLong(len));
         };
 
         let request = tokio_io::io::write_all(socket, data);
@@ -312,7 +317,7 @@ impl MtProtoTcpMode for IntermediateMode {
 
             data
         } else {
-            panic!("Message of length {} too long to send"); // FIXME
+            bailf!(ErrorKind::MessageTooLong(len));
         };
 
         let init: Box<Future<Item = (TcpStream, &'static [u8]), Error = io::Error>> = if self.is_first_request {
@@ -365,7 +370,7 @@ impl MtProtoTcpMode for AbridgedMode {
             data.push(0x7f);
             LittleEndian::write_uint(&mut data, len as u64, 3); // Use safe cast here
         } else {
-            panic!("Message of length {} too long to send");
+            bailf!(ErrorKind::MessageTooLong(len));
         }
 
         data.extend(serialized_message);
