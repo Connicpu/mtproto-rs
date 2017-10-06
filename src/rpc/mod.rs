@@ -41,17 +41,17 @@ fn sha1_bytes(parts: &[&[u8]]) -> error::Result<Vec<u8>> {
 
 fn next_message_id() -> i64 {
     let time = Utc::now();
-    let timestamp = time.timestamp() as i64;
-    let nano = time.nanosecond() as i64;
+    let timestamp = time.timestamp();
+    let nano = time.nanosecond() as i64; // from u32
 
-    ((timestamp << 32) | (nano & 0x_7fff_fffc))
+    ((timestamp << 32) | (nano & 0x_ffff_fffc))
 }
 
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AppInfo {
     api_id: i32,
-    // FIXME: use &'static str or Cow<'static, str> here
+    // FIXME: use &'a str or Cow<'a, str> here
     api_hash: String,
 }
 
@@ -93,8 +93,8 @@ pub struct Salt {
 impl From<FutureSalt> for Salt {
     fn from(fs: FutureSalt) -> Self {
         Salt {
-            valid_since: Utc.timestamp(fs.valid_since as i64, 0),
-            valid_until: Utc.timestamp(fs.valid_until as i64, 0),
+            valid_since: Utc.timestamp(fs.valid_since as i64, 0), // from i32
+            valid_until: Utc.timestamp(fs.valid_until as i64, 0), // same here
             salt: fs.salt,
         }
     }
@@ -107,10 +107,12 @@ enum MessagePurpose {
     NonContent,
 }
 
+// We use signed integers here because that's the default integer representation in MTProto;
+// by trying to match representations we can synchronize the range of allowed values
 #[derive(Debug)]
 pub struct Session {
     session_id: i64,
-    //temp_session_id: Option<i64>    // Not used
+    //temp_session_id: Option<i64>    // Not used (yet)
     server_salts: Vec<Salt>,
     seq_no: i32,
     auth_key: Option<AuthKey>,
@@ -134,8 +136,14 @@ impl Session {
         match purpose {
             MessagePurpose::Content => {
                 let result = self.seq_no | 1;
-                // FIXME: Resolve (im?)possible overlow panics here
-                self.seq_no += 2;
+
+                let (new_seq_no, overflowed) = self.seq_no.overflowing_add(2);
+                self.seq_no = new_seq_no;
+
+                if overflowed {
+                    // TODO: log overflow
+                }
+
                 result
             },
             MessagePurpose::NonContent => {

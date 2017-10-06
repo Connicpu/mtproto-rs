@@ -64,6 +64,11 @@ error_chain! {
             display("Factorization failed: other reason (pq = {})", pq)
         }
 
+        IntegerCast(num: u64) {
+            description("Error while casting an integer")
+            display("Error while casting an integer: {}", num)
+        }
+
         NoAuthKey {
             description("Authorization key not found")
             display("Authorization key not found")

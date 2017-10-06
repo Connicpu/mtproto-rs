@@ -30,6 +30,8 @@ pub enum Message<T> {
     },
 }
 
+// We use signed integers here because that's the default integer representation in MTProto;
+// by trying to match representations we can synchronize the range of allowed values
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct DecryptedData<T> {
     pub(super) salt: i64,

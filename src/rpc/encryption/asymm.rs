@@ -1,6 +1,9 @@
 use std::fmt;
 
 use byteorder::{LittleEndian, ByteOrder};
+use num_traits::cast::cast;
+use num_traits::int::PrimInt;
+use num_traits::sign::Unsigned;
 use openssl::{bn, hash, rsa};
 use serde_bytes::ByteBuf;
 use serde_mtproto;
@@ -164,12 +167,15 @@ pub fn calculate_auth_key(g: u32, dh_prime: &[u8], g_a: &[u8]) -> error::Result<
         b.rand(2048, bn::MSB_MAYBE_ZERO, false)?;
         let mut g_b = bn::BigNum::new()?;
         g_b.mod_exp(&g, &b, &dh_prime, &mut ctx)?;
-        if g_b.num_bytes() as usize != super::AUTH_KEY_SIZE || g_b >= dh_prime {
+        // .num_bytes() returns i32 and AUTH_KEY_SIZE is usize, so use u64 since it embraces
+        // both i32 and usize (until 128-bit machines are in the wild)
+        if g_b.num_bytes() as u64 != super::AUTH_KEY_SIZE as u64 || g_b >= dh_prime {
             continue;
         }
         let mut auth_key = bn::BigNum::new()?;
         auth_key.mod_exp(&g_a, &b, &dh_prime, &mut ctx)?;
-        if auth_key.num_bytes() as usize != super::AUTH_KEY_SIZE {
+        // Same here
+        if auth_key.num_bytes() as u64 != super::AUTH_KEY_SIZE as u64 {
             continue;
         }
         let auth_key = AuthKey::new(&auth_key.to_vec())?;
@@ -197,8 +203,15 @@ pub fn decompose_pq(pq: u64) -> error::Result<(u32, u32)> {
             pq_sqrt += 1;
             continue;
         }
-        let p = (pq_sqrt + y) as u32; // FIXME: use safe cast here
-        let q = (if pq_sqrt > y { pq_sqrt - y } else { y - pq_sqrt }) as u32; // Same here
+        let p = safe_uint_cast(pq_sqrt + y)?;
+        let q = safe_uint_cast(if pq_sqrt > y { pq_sqrt - y } else { y - pq_sqrt })?;
         return Ok(if p > q {(q, p)} else {(p, q)});
     }
+}
+
+fn safe_uint_cast<T: PrimInt + Unsigned + Copy, U: PrimInt + Unsigned>(n: T) -> error::Result<U> {
+    cast(n).ok_or_else(|| {
+        let upcasted = cast::<T, u64>(n).unwrap();    // Shouldn't panic
+        ErrorKind::IntegerCast(upcasted).into()
+    })
 }
