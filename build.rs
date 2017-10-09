@@ -6,44 +6,52 @@ use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::process::Command;
 
-const TL_DIR: &str = "tl";
-const OUTPUT_FILE: &str = "src/schema.rs";
 
-fn main_result() -> Result<(), io::Error> {
-    let mut files = fs::read_dir(TL_DIR)?
-        .filter_map(|r| {
-            match r {
-                Ok(d) => {
-                    let p = d.path();
-                    if p.extension().and_then(OsStr::to_str) == Some("tl") {
-                        Some(Ok(p))
-                    } else {
-                        None
-                    }
-                },
-                Err(e) => Some(Err(e)),
-            }
-        })
-        .collect::<Result<Vec<PathBuf>, _>>()?;
-    files.sort();
+const TL_SCHEMA_DIR: &'static str = "./tl";
+const RUST_SCHEMA_FILE: &'static str = "./src/schema.rs";
+
+fn collect_input() -> io::Result<String> {
+    let mut tl_files = fs::read_dir(TL_SCHEMA_DIR)?.filter_map(|dir_entry| {
+        match dir_entry {
+            Ok(entry) => {
+                let path = entry.path();
+
+                if entry.path().extension().and_then(OsStr::to_str) == Some("tl") {
+                    Some(Ok(path))
+                } else {
+                    None
+                }
+            },
+            Err(e) => Some(Err(e)),
+        }
+    }).collect::<io::Result<Vec<PathBuf>>>()?;
+
+    tl_files.sort();
 
     let mut input = String::new();
-    for file in files {
-        File::open(&file)?.read_to_string(&mut input)?;
-        println!("cargo:rerun-if-changed={}", file.to_string_lossy());
+    for tl_file in tl_files {
+        File::open(&tl_file)?.read_to_string(&mut input)?;
+        println!("cargo:rerun-if-changed={}", tl_file.to_string_lossy());
     }
 
+    Ok(input)
+}
+
+fn run() -> io::Result<()> {
+    let input = collect_input()?;
     let code = tl_codegen::generate_code_for(&input);
-    File::create(OUTPUT_FILE)?.write_all(code.as_str().as_bytes())?;
+
+    File::create(RUST_SCHEMA_FILE)?.write_all(code.as_str().as_bytes())?;
+
     Command::new("rustfmt")
         .arg("--write-mode")
         .arg("overwrite")
-        .arg("src/schema.rs")
+        .arg(RUST_SCHEMA_FILE)
         .status()?;
 
     Ok(())
 }
 
 fn main() {
-    main_result().unwrap();
+    run().unwrap();
 }

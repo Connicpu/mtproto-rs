@@ -86,8 +86,8 @@ macro_rules! tryf {
 }
 
 
-fn auth<P>(handle: Handle, mut protocol: P) -> Box<Future<Item = (), Error = error::Error>>
-    where P: 'static + MtProtoTcpMode
+fn auth<M>(handle: Handle, mut tcp_mode: M) -> Box<Future<Item = (), Error = error::Error>>
+    where M: 'static + MtProtoTcpMode
 {
     let app_info = tryf!(AppInfo::load_from_toml_file("AppInfo.toml")
         .chain_err(|| "this example needs a AppInfo.toml file with `api_id` and `api_hash` fields in it"));
@@ -97,7 +97,7 @@ fn auth<P>(handle: Handle, mut protocol: P) -> Box<Future<Item = (), Error = err
     let socket = TcpStream::connect(&remote_addr, &handle).map_err(error::Error::from);
 
     let auth_future = socket.and_then(|socket|
-        -> Box<Future<Item = (TcpStream, Vec<u8>, Session, ThreadRng, P, i128::i128), Error = error::Error>>
+        -> Box<Future<Item = (TcpStream, Vec<u8>, Session, ThreadRng, M, i128::i128), Error = error::Error>>
     {
         let mut rng = rand::thread_rng();
         let mut session = Session::new(rng.gen(), app_info);
@@ -108,11 +108,11 @@ fn auth<P>(handle: Handle, mut protocol: P) -> Box<Future<Item = (), Error = err
         };
 
         let serialized_message = tryf!(create_serialized_message(&mut session, req_pq, MessageType::PlainText));
-        let request = protocol.request(socket, serialized_message);
+        let request = tcp_mode.request(socket, serialized_message);
 
-        Box::new(request.map(move |(s, b)| (s, b, session, rng, protocol, nonce)))
-    }).and_then(|(socket, response_bytes, mut session, mut rng, mut protocol, nonce)|
-        -> Box<Future<Item = (TcpStream, Vec<u8>, Session, ThreadRng, P), Error = error::Error>>
+        Box::new(request.map(move |(s, b)| (s, b, session, rng, tcp_mode, nonce)))
+    }).and_then(|(socket, response_bytes, mut session, mut rng, mut tcp_mode, nonce)|
+        -> Box<Future<Item = (TcpStream, Vec<u8>, Session, ThreadRng, M), Error = error::Error>>
     {
         let response: Message<schema::ResPQ> = tryf!(parse_response(&session, &response_bytes));
 
@@ -175,10 +175,10 @@ fn auth<P>(handle: Handle, mut protocol: P) -> Box<Future<Item = (), Error = err
         };
 
         let serialized_message = tryf!(create_serialized_message(&mut session, req_dh_params, MessageType::PlainText));
-        let request = protocol.request(socket, serialized_message);
+        let request = tcp_mode.request(socket, serialized_message);
 
-        Box::new(request.map(move |(s, b)| (s, b, session, rng, protocol)))
-    }).and_then(|(_socket, response_bytes, session, _rng, _protocol)| {
+        Box::new(request.map(move |(s, b)| (s, b, session, rng, tcp_mode)))
+    }).and_then(|(_socket, response_bytes, session, _rng, _tcp_mode)| {
         let _: Message<schema::Server_DH_Params> = tryf!(parse_response(&session, &response_bytes));
 
         Box::new(futures::future::ok(()))
