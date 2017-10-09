@@ -247,8 +247,8 @@ impl Constructors {
         };
 
         let syn_data_type_items = {
-            // methods.len() == structs.len() == self.0.len()
-            let mut v = Vec::with_capacity(1 + self.0.len() * 2);
+            // enum & impl & structs; structs.len() == self.0.len()
+            let mut v = Vec::with_capacity(1 + 1 + self.0.len());
 
             v.push(syn_enum);
             v.extend(methods);
