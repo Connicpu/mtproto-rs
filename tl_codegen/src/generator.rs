@@ -228,7 +228,7 @@ impl Constructors {
                     style: syn::AttrStyle::Outer,
                     value: syn::MetaItem::List(
                         syn::Ident::new("derive"),
-                        vec!["Clone", "Debug", "Serialize", "Deserialize", "MtProtoSized"]
+                        vec!["Clone", "Debug", "Serialize", "Deserialize", "MtProtoSized", "MtProtoIdentifiable"]
                             .into_iter()
                             .map(|ident| syn::NestedMetaItem::MetaItem(syn::MetaItem::Word(syn::Ident::new(ident))))
                             .collect(),
