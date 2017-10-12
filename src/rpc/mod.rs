@@ -1,9 +1,11 @@
 use std::cmp;
 use std::fs::File;
 use std::io::Read;
+use std::mem;
 use std::path::Path;
 
 use chrono::{DateTime, Timelike, TimeZone, Utc};
+use either::Either;
 use erased_serde::Serialize as ErasedSerialize;
 use openssl::hash;
 use serde::de::{Deserialize, DeserializeSeed, DeserializeOwned};
@@ -190,25 +192,54 @@ impl Session {
         }
     }
 
-    pub fn create_message<T>(&mut self, body: T, msg_type: MessageType) -> error::Result<Message<T>>
-        where T: Identifiable + MtProtoSized
+    pub fn create_message<T>(&mut self,
+                             body: T,
+                             msg_type: MessageType)
+                            -> error::Result<Either<Message<T>, Message<::schema::MessageContainer>>>
+        where T: ::tl::dynamic::TLObject
     {
         let message = match msg_type {
             MessageType::PlainText => {
-                Message::PlainText {
+                Either::Left(Message::PlainText {
                     message_id: next_message_id(),
                     body: WithSize::new(Boxed::new(body))?,
-                }
+                })
             },
             MessageType::Encrypted => {
                 if self.to_ack.is_empty() {
-                    self.impl_create_decrypted_message(body, MessagePurpose::Content)?
-                } else {
-                    /*let acks = ::schema::MsgsAck {
-                        msg_ids: mem::replace(&mut self.to_ack, vec![]),
-                    };*/
+                    let message = self.impl_create_decrypted_message(body, MessagePurpose::Content)?;
 
-                    unimplemented!()
+                    Either::Left(message)
+                } else {
+                    let acks = ::schema::MsgsAck {
+                        msg_ids: Boxed::new(mem::replace(&mut self.to_ack, vec![])),
+                    };
+
+                    let msg_container = ::schema::MessageContainer {
+                        messages: vec![
+                            ::schema::Message {
+                                msg_id: next_message_id(),
+                                seqno: self.next_seq_no(MessagePurpose::NonContent),
+                                bytes: acks.size_hint()? as i32, // FIXME: safe cast
+                                body: Boxed::new(Box::new(acks)),
+                            },
+                            ::schema::Message {
+                                msg_id: next_message_id(),
+                                seqno: self.next_seq_no(MessagePurpose::Content),
+                                bytes: body.size_hint()? as i32, // FIXME: safe cast
+                                body: Boxed::new(Box::new(body)),
+                            }
+                        ],
+                    };
+
+                    let msg_container_id = msg_container.messages[1].msg_id;
+                    let mut message = self.impl_create_decrypted_message(msg_container, MessagePurpose::Content)?;
+                    match *&mut message {
+                        Message::PlainText { .. } => unreachable!(),
+                        Message::Decrypted { ref mut decrypted_data } => decrypted_data.message_id = msg_container_id,
+                    }
+
+                    Either::Right(message)
                 }
             },
         };
