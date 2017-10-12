@@ -6,6 +6,7 @@ use syn;
 use synom;
 
 use error::{self, ErrorKind};
+use generator::TypeckKind; // FIXME: place this to `analizer` module to eliminate circular dependency
 
 
 pub type TypeFixupMap = BTreeMap<Vec<String>, Vec<String>>;
@@ -117,6 +118,7 @@ pub enum TypeIrKind {
     NonCopyable,
     NeedsBox,
     Unit,
+    Dynamic,
 }
 
 impl TypeIr {
@@ -149,6 +151,14 @@ impl TypeIr {
             ty: syn::Ty::Tup(vec![]),
             with_option: false,
             kind: TypeIrKind::Unit,
+        }
+    }
+
+    pub fn dynamic(ty: syn::Ty) -> TypeIr {
+        TypeIr {
+            ty: ty,
+            with_option: false,
+            kind: TypeIrKind::Dynamic,
         }
     }
 
@@ -338,11 +348,11 @@ impl Constructor {
         })
     }
 
-    fn variant_match_pattern_fields_ignored(&self) -> syn::Pat {
+    /*fn variant_match_pattern_fields_ignored(&self) -> syn::Pat {
         let path = self.variant_name().into();
 
         syn::Pat::TupleStruct(path, vec![], Some(0))
-    }
+    }*/
 
     fn syn_generics(&self) -> syn::Generics {
         let ty_params = self.type_parameters.iter()
@@ -398,14 +408,15 @@ impl Constructor {
         }
     }
 
-    fn to_syn_struct(&self, name: &syn::Ident) -> error::Result<syn::Item> {
+    fn to_syn_struct<'a>(&self, name: &syn::Ident, ctors_typeck_info: &BTreeMap<&'a Constructor, TypeckKind>) -> error::Result<syn::Item> {
         let syn_generics = self.syn_generics();
         let syn_fields = self.fields
             .iter()
             .map(Field::to_syn_field)
             .collect::<error::Result<_>>()?;
 
-        let mut derives = vec!["Clone", "Debug", "Serialize", "Deserialize", "MtProtoSized"];
+        let typeck_kind = ctors_typeck_info[self];
+        let mut derives = typeck_kind.infer_basic_derives();
         let mut id_attr = None;
 
         if let Some(tl_id) = self.tl_id {
@@ -494,24 +505,24 @@ impl Constructor {
         }
     }
 
-    pub fn to_syn_variant_type_struct(&self) -> error::Result<Option<syn::Item>> {
+    pub fn to_syn_variant_type_struct<'a>(&self, ctors_typeck_info: &BTreeMap<&'a Constructor, TypeckKind>) -> error::Result<Option<syn::Item>> {
         if self.fields.is_empty() {
             Ok(None)
         } else {
-            self.to_syn_type_struct_base(self.variant_name()).map(Some)
+            self.to_syn_type_struct_base(self.variant_name(), ctors_typeck_info).map(Some)
         }
     }
 
-    fn to_syn_type_struct_base(&self, name: syn::Ident) -> error::Result<syn::Item> {
-        self.to_syn_struct(&name)
+    fn to_syn_type_struct_base<'a>(&self, name: syn::Ident, ctors_typeck_info: &BTreeMap<&'a Constructor, TypeckKind>) -> error::Result<syn::Item> {
+        self.to_syn_struct(&name, ctors_typeck_info)
     }
 
-    pub fn to_syn_single_type_struct(&self) -> error::Result<syn::Item> {
+    pub fn to_syn_single_type_struct<'a>(&self, ctors_typeck_info: &BTreeMap<&'a Constructor, TypeckKind>) -> error::Result<syn::Item> {
         let name = self.output.name().map(no_conflict_ident).unwrap(); // FIXME
-        self.to_syn_type_struct_base(name)
+        self.to_syn_type_struct_base(name, ctors_typeck_info)
     }
 
-    pub fn to_syn_function_struct(&self) -> error::Result<Vec<syn::Item>> {
+    pub fn to_syn_function_struct<'a>(&self, ctors_typeck_info: &BTreeMap<&'a Constructor, TypeckKind>) -> error::Result<Vec<syn::Item>> {
         let name = self.variant_name();
         let syn_rpc_generics = self.syn_rpc_generics();
         let syn_generics = self.syn_generics();
@@ -519,7 +530,7 @@ impl Constructor {
             .into_iter()
             .map(|ty_param| syn::Ty::Path(None, ty_param.ident.into()));
 
-        let struct_block = self.to_syn_struct(&name)?;
+        let struct_block = self.to_syn_struct(&name, ctors_typeck_info)?;
         let mut output_ty = self.output.to_type_ir()?.unboxed();
         if self.output.is_type_parameter() {
             match output_ty {
@@ -543,16 +554,6 @@ impl Constructor {
                     global: true,
                     segments: vec!["rpc".into(), "RpcFunction".into()],
                 }),
-                //Box::new(syn::Ty::Path(None, name.into())),
-                /*Box::new(syn::Ty::Path(None, syn::Path {
-                    global: false,
-                    segments: vec![
-                        syn::PathSegment {
-                            ident: name.into(),
-                            parameters: syn::PathParameters::AngleBracketed
-                        },
-                    ],
-                })),*/
                 Box::new(syn_type_from_components(false, vec![name], generic_types)),
                 vec![
                     syn::ImplItem {
@@ -705,7 +706,7 @@ fn names_to_type_ir(names: &[String], type_parameters: &[TypeIr]) -> error::Resu
                     let object_ty = syn_type_from_components(true, vec!["manual_types", "Object"], vec![]);
                     let boxed_ty = syn_type_from_components(true, vec!["serde_mtproto", "Boxed"], vec![object_ty]);
 
-                    TypeIr::noncopyable(boxed_ty)
+                    TypeIr::dynamic(boxed_ty)
                 },
                 _ => return Ok(None),
             };

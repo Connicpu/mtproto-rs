@@ -4,7 +4,7 @@ use std::fmt;
 
 use erased_serde::{self, Serialize as ErasedSerialize, Deserializer as ErasedDeserializer};
 use serde::ser::{Serialize, Serializer};
-use serde::de::{self, Deserialize, DeserializeSeed, Deserializer, Error as DeError};
+use serde::de::{self, DeserializeSeed, Deserializer, Error as DeError};
 use serde_mtproto::{Identifiable, MtProtoSized};
 
 
@@ -65,7 +65,7 @@ impl<'de> DeserializeSeed<'de> for TLConstructorsMap {
                 impl<'de> DeserializeSeed<'de> for BoxTLObjectSeed {
                     type Value = Box<TLObject>;
 
-                    fn deserialize<D>(self, mut deserializer: D) -> Result<Box<TLObject>, D::Error>
+                    fn deserialize<D>(self, deserializer: D) -> Result<Box<TLObject>, D::Error>
                         where D: Deserializer<'de>
                     {
                         let ctor = (self.0).0.get(&self.1).unwrap(); // FIXME

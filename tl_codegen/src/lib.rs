@@ -1,5 +1,6 @@
 #[macro_use]
 extern crate error_chain;
+extern crate petgraph;
 extern crate pom;
 #[cfg(feature = "printing")]
 #[macro_use]
