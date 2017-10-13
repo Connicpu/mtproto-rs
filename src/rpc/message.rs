@@ -1,3 +1,5 @@
+//! Message-related definitions.
+
 use std::fmt;
 use std::marker::PhantomData;
 
@@ -12,6 +14,7 @@ use super::encryption::AuthKey;
 use super::utils::EitherRef;
 
 
+/// Possible kinds of MTProto messages.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MessageType {
     PlainText,
@@ -19,12 +22,16 @@ pub enum MessageType {
 }
 
 
+/// Holds data relevant to a specific MTProto message in a type-safe
+/// manner.
 #[derive(Debug, PartialEq)]
 pub enum Message<T> {
     PlainText {
         message_id: i64,
         body: WithSize<Boxed<T>>,
     },
+    /// Variant either used to hold data to encrypt for sending or
+    /// already decrypted data after receiving raw bytes.
     Decrypted {
         decrypted_data: DecryptedData<T>,
     },
@@ -45,6 +52,8 @@ pub struct DecryptedData<T> {
 }
 
 impl<T: Identifiable + MtProtoSized> Message<T> {
+    /// Returns `Some(body)` if the message was plain-text.
+    /// Otherwise returns `None`.
     pub fn into_plain_text_body(self) -> Option<T> {
         match self {
             Message::PlainText { body, .. } => Some(body.into_inner().into_inner()),
@@ -52,10 +61,17 @@ impl<T: Identifiable + MtProtoSized> Message<T> {
         }
     }
 
+    /// Unwraps the body of the plain-text message.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the message was encrypted.
     pub fn unwrap_plain_text_body(self) -> T {
         self.into_plain_text_body().expect("`Message::PlainText` variant")
     }
 
+    /// Returns `Some(body)` if the message was encrypted.
+    /// Otherwise returns `None`.
     pub fn into_decrypted_body(self) -> Option<T> {
         match self {
             Message::PlainText { .. } => None,
@@ -63,6 +79,11 @@ impl<T: Identifiable + MtProtoSized> Message<T> {
         }
     }
 
+    /// Unwraps the body of the encrypted message.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the message was plain-text.
     pub fn unwrap_decrypted_body(self) -> T {
         self.into_decrypted_body().expect("`Message::Decrypted` variant")
     }

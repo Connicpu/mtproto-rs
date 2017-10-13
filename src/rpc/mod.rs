@@ -1,3 +1,5 @@
+//! RPC essentials.
+
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -26,14 +28,27 @@ pub trait RpcFunction: ErasedSerialize {
 }
 
 
+/// Telegram application information required for authorization.
+///
+/// A single specific instance of `AppInfo` is typically tied to a
+/// single phone number. You can obtain it here:
+/// https://core.telegram.org/api/obtaining_api_id.
+///
+/// After registration you will be given `api_id` and `api_hash` values
+/// which are used here.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AppInfo {
-    api_id: i32,
+    /// First field under "App configuration" section at
+    /// https://my.telegram.org/apps.
+    pub api_id: i32,
     // FIXME: use &'a str or Cow<'a, str> here
-    api_hash: String,
+    /// Second field under "App configuration" section at
+    /// https://my.telegram.org/apps.
+    pub api_hash: String,
 }
 
 impl AppInfo {
+    /// Construct an `AppInfo` instance from API id and API hash.
     pub fn new(api_id: i32, api_hash: String) -> AppInfo {
         AppInfo {
             api_id: api_id,
@@ -41,15 +56,18 @@ impl AppInfo {
         }
     }
 
-    pub fn load_from_toml_value(value: toml::Value) -> error::Result<AppInfo> {
+    /// Read an `AppInfo` from a TOML value.
+    pub fn read_from_toml_value(value: toml::Value) -> error::Result<AppInfo> {
         AppInfo::deserialize(value).map_err(Into::into)
     }
 
-    pub fn load_from_toml_str(s: &str) -> error::Result<AppInfo> {
+    /// Read an `AppInfo` from a string.
+    pub fn read_from_toml_str(s: &str) -> error::Result<AppInfo> {
         toml::from_str(s).map_err(Into::into)
     }
 
-    pub fn load_from_toml_file<P: AsRef<Path>>(path: P) -> error::Result<AppInfo> {
+    /// Read an `AppInfo` from a file.
+    pub fn read_from_toml_file<P: AsRef<Path>>(path: P) -> error::Result<AppInfo> {
         let mut buf = String::new();
         let mut file = File::open(path)?;
 

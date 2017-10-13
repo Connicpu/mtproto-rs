@@ -1,3 +1,5 @@
+//! Symmetric-key operations and facilities around them.
+
 use std::fmt;
 
 use byteorder::{ByteOrder, LittleEndian};
@@ -66,6 +68,8 @@ impl AesParams {
 }
 
 
+// FIXME: sensitive data! implement zeroing on drop!
+/// Holds data obtained after a successful authorization.
 pub struct AuthKey {
     auth_key: [u8; AUTH_KEY_SIZE],
     aux_hash: i64,
@@ -104,7 +108,6 @@ impl PartialEq for AuthKey {
     }
 }
 
-
 // FIXME: is that the right default?
 // zeroing the buffer for sensitive data seems fine...
 impl Default for AuthKey {
@@ -118,6 +121,8 @@ impl Default for AuthKey {
 }
 
 impl AuthKey {
+    // FIXME: pass `key_in` by &mut reference and zero it after that!
+    /// Create a storage for the raw key.
     pub fn new(key_in: &[u8]) -> error::Result<AuthKey> {
         let mut key = [0u8; AUTH_KEY_SIZE];
 
@@ -141,6 +146,11 @@ impl AuthKey {
         })
     }
 
+    /// Encrypts an arbitrary sequence of bytes using the internally
+    /// stored key.
+    ///
+    /// Returns an authorization key ID, message key and encrypted data,
+    /// respectively.
     pub fn encrypt_message_bytes(&self, message_bytes: &[u8]) -> error::Result<(i64, i128, Vec<u8>)> {
         let auth_key_id = self.fingerprint;
 
@@ -158,6 +168,7 @@ impl AuthKey {
         Ok((auth_key_id, message_key, encrypted_data))
     }
 
+    /// Decrypts a sequence of bytes and returns decrypted raw data.
     pub fn decrypt_message_bytes(&self,
                                  auth_key_id: i64,
                                  message_key: i128,

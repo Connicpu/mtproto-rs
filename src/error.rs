@@ -1,3 +1,5 @@
+//! Error handling related to this crate.
+
 error_chain! {
     links {
         SerdeMtProto(::serde_mtproto::Error, ::serde_mtproto::ErrorKind);

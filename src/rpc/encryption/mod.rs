@@ -1,3 +1,5 @@
+//! Wrappers and functions around low-level encryption primitives.
+
 pub mod asymm;
 pub mod symm;
 mod utils;

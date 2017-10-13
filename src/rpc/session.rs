@@ -1,3 +1,5 @@
+//! MTProto session.
+
 use std::cmp;
 use std::mem;
 
@@ -30,6 +32,10 @@ enum MessagePurpose {
 
 // We use signed integers here because that's the default integer representation in MTProto;
 // by trying to match representations we can synchronize the range of allowed values
+/// Represents a session attached to the client device and user key ID.
+///
+/// More information about sessions:
+/// https://core.telegram.org/mtproto#high-level-component-rpc-query-language-api.
 #[derive(Debug)]
 pub struct Session {
     session_id: i64,
@@ -42,6 +48,7 @@ pub struct Session {
 }
 
 impl Session {
+    /// Construct a new `Session` from a unique session ID and app info.
     pub fn new(session_id: i64, app_info: AppInfo) -> Session {
         Session {
             session_id: session_id,
@@ -96,6 +103,7 @@ impl Session {
         self.server_salts.sort_by(|a, b| a.valid_since.cmp(&b.valid_since));
     }
 
+    /// Adopt an `AuthKey` after successful authorization.
     pub fn adopt_key(&mut self, auth_key: AuthKey) {
         self.auth_key = Some(auth_key);
     }
@@ -111,6 +119,7 @@ impl Session {
         }
     }
 
+    /// Create a message tied to this session.
     pub fn create_message<T>(&mut self,
                              body: T,
                              msg_type: MessageType)
@@ -186,6 +195,7 @@ impl Session {
         Ok(message)
     }
 
+    /// Reads a `Message` from raw bytes.
     pub fn process_message<T>(&self, message_bytes: &[u8], encrypted_data_len: Option<u32>) -> error::Result<Message<T>>
         where T: DeserializeOwned
     {

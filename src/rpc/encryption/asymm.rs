@@ -1,3 +1,5 @@
+//! Asymmetric-key operations and facilities around them.
+
 use std::fmt;
 
 use byteorder::{LittleEndian, ByteOrder};
@@ -14,9 +16,15 @@ use super::symm::AuthKey;
 use super::utils::{Padding, sha1_and_or_pad};
 
 
+/// RSA public key stored as **X.509 SubjectPublicKeyInfo/OpenSSL PEM
+/// public key**.
+///
+/// Relevant StackOverflow answer which explains why it's called like
+/// that: https://stackoverflow.com/a/29707204.
 #[derive(Debug)]
 pub struct RsaRawPublicKeyRef<'a>(&'a [u8]);
 
+/// Set of raw keys known at compile-time.
 pub const KNOWN_RAW_KEYS: &'static [RsaRawPublicKeyRef<'static>] = &[
     RsaRawPublicKeyRef(b"\
 -----BEGIN PUBLIC KEY-----\n\
@@ -38,6 +46,7 @@ impl<'a> RsaRawPublicKeyRef<'a> {
 }
 
 
+/// "Cooked" RSA key.
 pub struct RsaPublicKey(rsa::Rsa);
 
 impl fmt::Debug for RsaPublicKey {
@@ -110,6 +119,7 @@ impl RsaPublicKey {
         Ok(LittleEndian::read_i64(&sha1_fingerprint[12..20]))
     }
 
+    /// Encrypts using the internal RSA key.
     pub fn encrypt(&self, input: &[u8]) -> error::Result<[u8; 256]> {
         let mut padded_input = sha1_and_or_pad(input, true, Padding::Total255Random)?;
         padded_input.insert(0, 0);    // OpenSSL requires exactly 256 bytes
@@ -121,9 +131,9 @@ impl RsaPublicKey {
         Ok(output)
     }
 
-    // Other implementation of RSA encryption, just to verify that we are on the right track with
-    // `encrypt()`. Also can be served as a drop-in replacement in case if we abandon OpenSSL
-    // dependency after rewriting this method to use `num_bigint::BigUInt`.
+    /// Other implementation of RSA encryption, just to verify that we are on the right track with
+    /// `encrypt()`. Also can be served as a drop-in replacement in case if we abandon OpenSSL
+    /// dependency after rewriting this method to use `num_bigint::BigUInt`.
     pub fn encrypt2(&self, input: &[u8]) -> error::Result<Vec<u8>> {
         let padded_input = sha1_and_or_pad(input, true, Padding::Total255Random)?;
         println!("!!! Padded input: {:?}", &padded_input);
@@ -140,11 +150,17 @@ impl RsaPublicKey {
     }
 }
 
+/// Flat version of `find_first_key` function.
+///
+/// Upon failure to find a suitable key, it returns an error rather than
+/// `None`.
 pub fn find_first_key_fail_safe(of_fingerprints: &[i64]) -> error::Result<(RsaPublicKey, i64)> {
     find_first_key(of_fingerprints)?
         .ok_or(ErrorKind::NoRsaPublicKeyForFingerprints(of_fingerprints.to_vec()).into())
 }
 
+/// Find a key fingerprint of which can be found in the supplied
+/// sequence of fingerprints.
 pub fn find_first_key(of_fingerprints: &[i64]) -> error::Result<Option<(RsaPublicKey, i64)>> {
     for raw_key in KNOWN_RAW_KEYS {
         let key = raw_key.read()?;
@@ -193,6 +209,11 @@ fn ceil_isqrt(x: u64) -> u64 {
     ret
 }
 
+/// Decomposes a large composite number into 2 primes.
+///
+/// Uses [Fermat's factorization method][fermat].
+///
+/// [fermat]: https://en.wikipedia.org/wiki/Fermat%27s_factorization_method
 pub fn decompose_pq(pq: u64) -> error::Result<(u32, u32)> {
     let mut pq_sqrt = ceil_isqrt(pq);
 
