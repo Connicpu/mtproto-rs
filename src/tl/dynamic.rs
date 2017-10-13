@@ -101,7 +101,7 @@ impl Clone for Box<TLObject> {
 }
 
 impl Identifiable for Box<TLObject> {
-    fn type_id(&self) -> i32 {
+    fn type_id(&self) -> u32 {
         (**self).type_id()
     }
 
