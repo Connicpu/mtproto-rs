@@ -1,2 +1,3 @@
-pub mod parsing;
 pub mod dynamic;
+
+pub use self::dynamic::TLObject;

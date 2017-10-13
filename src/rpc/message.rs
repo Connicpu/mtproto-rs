@@ -8,7 +8,7 @@ use serde_mtproto::{self, Boxed, Identifiable, MtProtoSized, WithSize, UnsizedBy
 
 use error::{self, ErrorKind};
 
-use super::AuthKey;
+use super::encryption::AuthKey;
 use super::utils::EitherRef;
 
 

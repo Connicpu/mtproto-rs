@@ -9,7 +9,9 @@ use serde_bytes::ByteBuf;
 use serde_mtproto;
 
 use error::{self, ErrorKind};
-use super::{AuthKey, Padding, sha1_and_or_pad};
+
+use super::symm::AuthKey;
+use super::utils::{Padding, sha1_and_or_pad};
 
 
 #[derive(Debug)]

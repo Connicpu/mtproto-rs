@@ -55,3 +55,5 @@ pub mod tl;
 
 
 pub use error::{Error, ErrorKind, Result, ResultExt};
+pub use rpc::{AppInfo, Session};
+pub use tl::TLObject;

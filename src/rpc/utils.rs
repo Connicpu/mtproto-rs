@@ -1,5 +1,20 @@
+use openssl::hash;
 use serde::ser::{self, Serialize};
 use serde::de::{self, Deserialize};
+
+use error;
+
+
+pub(crate) fn sha1_bytes(parts: &[&[u8]]) -> error::Result<Vec<u8>> {
+    let mut hasher = hash::Hasher::new(hash::MessageDigest::sha1())?;
+    for part in parts {
+        hasher.update(part)?;
+    }
+
+    let bytes = hasher.finish2().map(|b| b.to_vec())?;
+
+    Ok(bytes)
+}
 
 
 #[derive(Debug)]
