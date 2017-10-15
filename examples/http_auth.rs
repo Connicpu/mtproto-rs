@@ -18,6 +18,7 @@ use std::str;
 
 use byteorder::{ByteOrder, BigEndian};
 use futures::{Future, Stream};
+use mtproto::tl::dynamic::TLObject;
 use mtproto::rpc::{AppInfo, Session};
 use mtproto::rpc::encryption::asymm;
 use mtproto::rpc::message::{Message, MessageType};
@@ -27,7 +28,6 @@ use select::document::Document;
 use select::predicate::Name;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use serde_mtproto::{Identifiable, MtProtoSized};
 use tokio_core::reactor::{Core, Handle};
 
 
@@ -88,7 +88,7 @@ macro_rules! tryf {
 
 
 fn auth(handle: Handle) -> Box<Future<Item = (), Error = error::Error>> {
-    let app_info = tryf!(AppInfo::load_from_toml_file("AppInfo.toml")
+    let app_info = tryf!(AppInfo::read_from_toml_file("AppInfo.toml")
         .chain_err(|| "this example needs a AppInfo.toml file with `api_id` and `api_hash` fields in it"));
 
     let http_client = hyper::Client::new(&handle);
@@ -221,7 +221,8 @@ fn create_http_request<T>(session: &mut Session,
                           data: T,
                           message_type: MessageType)
                          -> error::Result<hyper::Request>
-    where T: ::std::fmt::Debug + Serialize + Identifiable + MtProtoSized
+    //where T: ::std::fmt::Debug + Serialize + Identifiable + MtProtoSized
+    where T: ::std::fmt::Debug + Serialize + TLObject
 {
     let message = session.create_message(data, message_type)?;
     println!("Message to send: {:#?}", &message);

@@ -20,6 +20,7 @@ use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use crc::crc32;
 use extprim::i128;
 use futures::Future;
+use mtproto::tl::dynamic::TLObject;
 use mtproto::rpc::{AppInfo, Session};
 use mtproto::rpc::message::{Message, MessageType};
 use mtproto::rpc::encryption::asymm;
@@ -27,7 +28,6 @@ use mtproto::schema;
 use rand::{Rng, ThreadRng};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use serde_mtproto::{Identifiable, MtProtoSized};
 use tokio_core::net::TcpStream;
 use tokio_core::reactor::{Core, Handle};
 
@@ -89,7 +89,7 @@ macro_rules! tryf {
 fn auth<M>(handle: Handle, mut tcp_mode: M) -> Box<Future<Item = (), Error = error::Error>>
     where M: 'static + MtProtoTcpMode
 {
-    let app_info = tryf!(AppInfo::load_from_toml_file("AppInfo.toml")
+    let app_info = tryf!(AppInfo::read_from_toml_file("AppInfo.toml")
         .chain_err(|| "this example needs a AppInfo.toml file with `api_id` and `api_hash` fields in it"));
 
     let remote_addr = "149.154.167.51:443".parse().unwrap();
@@ -191,7 +191,8 @@ fn create_serialized_message<T>(session: &mut Session,
                                 data: T,
                                 message_type: MessageType)
                                -> error::Result<Vec<u8>>
-    where T: ::std::fmt::Debug + Serialize + Identifiable + MtProtoSized
+    //where T: ::std::fmt::Debug + Serialize + Identifiable + MtProtoSized
+    where T: ::std::fmt::Debug + Serialize + TLObject
 {
     let message = session.create_message(data, message_type)?;
     println!("Message to send: {:#?}", &message);

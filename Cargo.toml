@@ -8,7 +8,8 @@ build = "build.rs"
 [dependencies]
 byteorder = "1.1"
 chrono = "0.4"
-either = "1.2"
+#either = { version = "1.2", features = ["serde"] }
+either = { git = "https://github.com/hcpl/either", branch = "serde-support", features = ["serde"] }
 erased-serde = "0.3"
 error-chain = "0.11"
 extprim = "1.4.0"
