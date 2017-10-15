@@ -9,6 +9,7 @@ use serde::de::{DeserializeSeed, DeserializeOwned};
 use serde_mtproto::{Boxed, Identifiable, MtProtoSized, WithSize};
 
 use error::{self, ErrorKind};
+use manual_types::Object;
 use utils::safe_int_cast;
 
 use super::{AppInfo, Salt};
@@ -124,7 +125,7 @@ impl Session {
     pub fn create_message<T>(&mut self,
                              body: T,
                              msg_type: MessageType)
-                            -> error::Result<Either<Message<T>, Message<::schema::MessageContainer>>>
+                            -> error::Result<Either<Message<T>, Message<::schema::manual::MessageContainer>>>
         where T: ::tl::dynamic::TLObject
     {
         let message = match msg_type {
@@ -144,22 +145,17 @@ impl Session {
                         msg_ids: Boxed::new(mem::replace(&mut self.to_ack, vec![])),
                     };
 
-                    let msg_container = ::schema::MessageContainer {
+                    let msg_container = ::schema::manual::MessageContainer {
                         messages: vec![
-                            ::schema::Message {
+                            ::schema::manual::Message {
                                 msg_id: next_message_id(),
                                 seqno: self.next_seq_no(MessagePurpose::NonContent),
-                                // NOTE: may need 2 casts here: usize -> u32 (safe cast) ->
-                                // i32 (`as` cast) because of range of allowed values
-                                bytes: safe_int_cast::<usize, i32>(acks.size_hint()?)?,
-                                body: Boxed::new(Box::new(acks)),
+                                body: WithSize::new(Boxed::new(Box::new(acks) as Object))?,
                             },
-                            ::schema::Message {
+                            ::schema::manual::Message {
                                 msg_id: next_message_id(),
                                 seqno: self.next_seq_no(MessagePurpose::Content),
-                                // NOTE: same here
-                                bytes: safe_int_cast::<usize, i32>(body.size_hint()?)?,
-                                body: Boxed::new(Box::new(body)),
+                                body: WithSize::new(Boxed::new(Box::new(body) as Object))?,
                             }
                         ],
                     };

@@ -700,6 +700,12 @@ fn names_to_type_ir(names: &[String], type_parameters: &[TypeIr]) -> error::Resu
                     let boxed_ty = syn_type_from_components(true, vec!["serde_mtproto", "Boxed"], vec![vec_ty]);
                     TypeIr::noncopyable(boxed_ty)
                 },
+                "WithSize" => {
+                    let ty_param = get_ty_param()?.clone().unboxed();
+                    let with_size_ty = syn_type_from_components(true, vec!["serde_mtproto", "WithSize"], vec![ty_param]);
+
+                    TypeIr::noncopyable(with_size_ty)
+                },
                 "Object" => {
                     let object_ty = syn_type_from_components(true, vec!["manual_types", "Object"], vec![]);
                     let boxed_ty = syn_type_from_components(true, vec!["serde_mtproto", "Boxed"], vec![object_ty]);
