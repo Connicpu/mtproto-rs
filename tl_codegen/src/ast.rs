@@ -6,7 +6,7 @@ use syn;
 use synom;
 
 use error::{self, ErrorKind};
-use generator::TypeckKind; // FIXME: place this to `analizer` module to eliminate circular dependency
+use analyzer::TypeckKind;
 
 
 pub type TypeFixupMap = BTreeMap<Vec<String>, Vec<String>>;

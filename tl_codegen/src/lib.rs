@@ -10,6 +10,7 @@ extern crate syn;
 extern crate synom;
 
 
+mod analyzer;
 mod ast;
 mod error;
 mod generator;
