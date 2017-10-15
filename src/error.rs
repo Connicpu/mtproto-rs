@@ -29,10 +29,10 @@ error_chain! {
             display("No server salts found in the session")
         }
 
-        NotEnoughFields(label: &'static str, fields_count_so_far: usize) {
+        NotEnoughFields(type_or_variant: &'static str, fields_count_so_far: usize) {
             description("Not enough deserialized fields")
             display("Not enough deserialized fields for {}: {} fields deserialized so far",
-                label, fields_count_so_far)
+                type_or_variant, fields_count_so_far)
         }
 
         Sha1Total255Longer {
@@ -79,6 +79,11 @@ error_chain! {
         NoEncryptedDataLengthProvided {
             description("No encrypted data length provided to deserialize an encrypted message")
             display("No encrypted data length provided to deserialize an encrypted message")
+        }
+
+        UnknownConstructorId(type_or_variant: &'static str, ctor_id: u32) {
+            description("Unknown constructor id found while deserializing")
+            display("Unknown constructor id found while deserializing {}: {:#x}", type_or_variant, ctor_id)
         }
     }
 }

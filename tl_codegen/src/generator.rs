@@ -4,7 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use quote;
 use syn;
 
-use analyzer::{ConstructorInputData, TypeckKind, build_transform_dag, analyze_dag};
+use analyzer::{ConstructorInputData, PathGlobalSegmentsTyParams, TypeckKind,
+               build_transform_dag, analyze_dag};
 use ast::{Constructor, Delimiter, Item, Type, TypeFixupMap, TypeIrKind,
           no_conflict_ident, wrap_option_type, wrap_option_value};
 use error;
@@ -476,9 +477,9 @@ impl AllConstructors {
     }
 
     fn prepare_input_data_for_dag<'a>(&'a self) -> Vec<ConstructorInputData<'a>> {
-        fn get_unrolled_syn_ty(namespaces: &[String], ty: &Type) -> Vec<Vec<syn::Ident>> {
+        fn get_unrolled_syn_ty(namespaces: &[String], ty: &Type) -> PathGlobalSegmentsTyParams {
             fn split_path_to_global_segments(namespaces: &[String], path: syn::Path)
-                -> Vec<Vec<syn::Ident>>
+                -> PathGlobalSegmentsTyParams
             {
                 let mut split = vec![vec![]];
 

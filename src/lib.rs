@@ -47,6 +47,7 @@ extern crate toml;
 }*/
 
 mod manual_types;
+mod utils;
 
 pub mod error;
 pub mod rpc;

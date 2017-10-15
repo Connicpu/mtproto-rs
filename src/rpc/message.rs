@@ -26,12 +26,13 @@ pub enum MessageType {
 /// manner.
 #[derive(Debug, PartialEq)]
 pub enum Message<T> {
+    /// Data transmitted in plain-text.
     PlainText {
         message_id: i64,
         body: WithSize<Boxed<T>>,
     },
-    /// Variant either used to hold data to encrypt for sending or
-    /// already decrypted data after receiving raw bytes.
+    /// Either data to encrypt for sending or data alredy decrypted
+    /// after receiving raw bytes.
     Decrypted {
         decrypted_data: DecryptedData<T>,
     },
@@ -39,6 +40,7 @@ pub enum Message<T> {
 
 // We use signed integers here because that's the default integer representation in MTProto;
 // by trying to match representations we can synchronize the range of allowed values
+/// Holds data either to be encrypted (in requests) or after decryption (in responses).
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct DecryptedData<T> {
     pub(super) salt: i64,

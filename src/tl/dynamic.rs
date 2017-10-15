@@ -7,6 +7,8 @@ use serde::ser::{Serialize, Serializer};
 use serde::de::{self, DeserializeSeed, Deserializer, Error as DeError};
 use serde_mtproto::{Identifiable, MtProtoSized};
 
+use error::{self, ErrorKind};
+
 
 pub trait TLObjectCloneToBox {
     fn clone_to_box(&self) -> Box<TLObject>;
@@ -48,6 +50,10 @@ impl<'de> DeserializeSeed<'de> for TLConstructorsMap {
     fn deserialize<D>(self, deserializer: D) -> Result<Box<TLObject>, D::Error>
         where D: Deserializer<'de>
     {
+        fn errconv<E: DeError>(kind: ErrorKind) -> E {
+            E::custom(error::Error::from(kind))
+        }
+
         struct BoxTLObjectVisitor(TLConstructorsMap);
 
         impl<'de> de::Visitor<'de> for BoxTLObjectVisitor {
@@ -60,7 +66,7 @@ impl<'de> DeserializeSeed<'de> for TLConstructorsMap {
             fn visit_seq<A>(self, mut seq: A) -> Result<Box<TLObject>, A::Error>
                 where A: de::SeqAccess<'de>
             {
-                struct BoxTLObjectSeed(TLConstructorsMap, i32);
+                struct BoxTLObjectSeed(TLConstructorsMap, u32);
 
                 impl<'de> DeserializeSeed<'de> for BoxTLObjectSeed {
                     type Value = Box<TLObject>;
@@ -68,13 +74,17 @@ impl<'de> DeserializeSeed<'de> for TLConstructorsMap {
                     fn deserialize<D>(self, deserializer: D) -> Result<Box<TLObject>, D::Error>
                         where D: Deserializer<'de>
                     {
-                        let ctor = (self.0).0.get(&self.1).unwrap(); // FIXME
+                        let ctor = (self.0).0.get(&self.1)
+                            .ok_or(errconv(ErrorKind::UnknownConstructorId("Box<TLObject>", self.1)))?;
+
                         ctor(&ErasedDeserializer::erase(deserializer)).map_err(|e| D::Error::custom(e))
                     }
                 }
 
-                let type_id = seq.next_element()?.unwrap(); // FIXME
-                let object = seq.next_element_seed(BoxTLObjectSeed(self.0, type_id))?.unwrap(); // FIXME
+                let type_id = seq.next_element()?
+                    .ok_or(errconv(ErrorKind::NotEnoughFields("Box<TLObject>", 0)))?;
+                let object = seq.next_element_seed(BoxTLObjectSeed(self.0, type_id))?
+                    .ok_or(errconv(ErrorKind::NotEnoughFields("Box<TLObject>", 1)))?;
 
                 Ok(object)
             }
@@ -116,7 +126,7 @@ impl<T: Clone + Any + Serialize + Identifiable + MtProtoSized> TLObject for T {
 }
 
 
-pub struct TLConstructorsMap(pub(crate) HashMap<i32, fn(&ErasedDeserializer) -> Result<Box<TLObject>, erased_serde::Error>>);
+pub struct TLConstructorsMap(pub(crate) HashMap<u32, fn(&ErasedDeserializer) -> Result<Box<TLObject>, erased_serde::Error>>);
 
 impl TLConstructorsMap {
     fn new() -> TLConstructorsMap {

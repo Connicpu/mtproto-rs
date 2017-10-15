@@ -460,8 +460,6 @@ impl Constructor {
         Ok(syn_struct)
     }
 
-    // FIXME: fill in methods
-
     pub fn variant_name(&self) -> syn::Ident {
         self.variant.name().map(no_conflict_ident).unwrap() // FIXME: .unwrap()
     }

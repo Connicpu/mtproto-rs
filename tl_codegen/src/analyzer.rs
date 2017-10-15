@@ -6,6 +6,8 @@ use syn;
 use ast::Constructor;
 
 
+pub(crate) type PathGlobalSegmentsTyParams = Vec<Vec<syn::Ident>>;
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Contains;
 
@@ -23,15 +25,15 @@ impl TypeckKind {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ConstructorInputData<'a> {
-    pub(crate) ty: Vec<Vec<syn::Ident>>,
+    pub(crate) ty: PathGlobalSegmentsTyParams,
     pub(crate) kind: TypeckKind,
-    pub(crate) deps: Vec<Vec<Vec<syn::Ident>>>, // FIXME: ahhhh my eyes
+    pub(crate) deps: Vec<PathGlobalSegmentsTyParams>,
     pub(crate) ctor: &'a Constructor,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct ConstructorOutputData<'a> {
-    ty: Vec<Vec<syn::Ident>>,
+    ty: PathGlobalSegmentsTyParams,
     kind: TypeckKind,
     ctor: &'a Constructor,
 }

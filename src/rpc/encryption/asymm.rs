@@ -3,14 +3,12 @@
 use std::fmt;
 
 use byteorder::{LittleEndian, ByteOrder};
-use num_traits::cast::cast;
-use num_traits::int::PrimInt;
-use num_traits::sign::Unsigned;
 use openssl::{bn, hash, rsa};
 use serde_bytes::ByteBuf;
 use serde_mtproto;
 
 use error::{self, ErrorKind};
+use utils::safe_int_cast;
 
 use super::symm::AuthKey;
 use super::utils::{Padding, sha1_and_or_pad};
@@ -226,15 +224,8 @@ pub fn decompose_pq(pq: u64) -> error::Result<(u32, u32)> {
             pq_sqrt += 1;
             continue;
         }
-        let p = safe_uint_cast(pq_sqrt + y)?;
-        let q = safe_uint_cast(if pq_sqrt > y { pq_sqrt - y } else { y - pq_sqrt })?;
+        let p = safe_int_cast::<u64, u32>(pq_sqrt + y)?;
+        let q = safe_int_cast::<u64, u32>(if pq_sqrt > y { pq_sqrt - y } else { y - pq_sqrt })?;
         return Ok(if p > q {(q, p)} else {(p, q)});
     }
-}
-
-fn safe_uint_cast<T: PrimInt + Unsigned + Copy, U: PrimInt + Unsigned>(n: T) -> error::Result<U> {
-    cast(n).ok_or_else(|| {
-        let upcasted = cast::<T, u64>(n).unwrap();    // Shouldn't panic
-        ErrorKind::IntegerCast(upcasted).into()
-    })
 }
