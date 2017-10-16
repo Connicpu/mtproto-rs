@@ -10,7 +10,6 @@ use serde_mtproto::{Boxed, Identifiable, MtProtoSized, WithSize};
 
 use error::{self, ErrorKind};
 use manual_types::Object;
-use utils::safe_int_cast;
 
 use super::{AppInfo, Salt};
 use super::encryption::AuthKey;

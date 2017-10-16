@@ -46,6 +46,7 @@ pub(crate) fn build_transform_dag<'a>(ctors_input_data: Vec<ConstructorInputData
     let mut node_idx_ctors = HashMap::new();
 
     // BUILD DAG
+    // 1. Insert nodes
     for input_data in ctors_input_data {
         let output_data = ConstructorOutputData {
             ty: input_data.ty.clone(),
@@ -57,6 +58,7 @@ pub(crate) fn build_transform_dag<'a>(ctors_input_data: Vec<ConstructorInputData
         node_idx_ctors.insert(node_idx, input_data);
     }
 
+    // 2. Insert edges
     for (from_node_idx, input_data) in &node_idx_ctors {
         {
             let ConstructorOutputData { ref ty, .. } = graph[*from_node_idx];

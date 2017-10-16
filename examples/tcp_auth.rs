@@ -134,14 +134,14 @@ fn auth<M>(handle: Handle, mut tcp_mode: M) -> Box<Future<Item = (), Error = err
         let p = u32_to_vec(p_u32);
         let q = u32_to_vec(q_u32);
 
-        let p_q_inner_data = schema::P_Q_inner_data {
+        let p_q_inner_data = schema::P_Q_inner_data::p_q_inner_data(schema::p_q_inner_data {
             pq:  res_pq.pq,
             p: p.clone().into(),
             q: q.clone().into(),
             nonce: res_pq.nonce,
             server_nonce: res_pq.server_nonce,
             new_nonce: rng.gen(),
-        };
+        });
 
         println!("Data to send: {:#?}", &p_q_inner_data);
         let p_q_inner_data_serialized = tryf!(serde_mtproto::to_bytes(&p_q_inner_data));

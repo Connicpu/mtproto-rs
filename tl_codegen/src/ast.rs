@@ -695,16 +695,20 @@ fn names_to_type_ir(names: &[String], type_parameters: &[TypeIr]) -> error::Resu
                     TypeIr::noncopyable(vec_ty)
                 },
                 "Vector" => {
-                    let ty_param = get_ty_param()?.clone().unboxed();
-                    let vec_ty = syn_type_from_components(false, vec!["Vec"], vec![ty_param]);
+                    let syn_ty_param = get_ty_param()?.clone().unboxed();
+                    let vec_ty = syn_type_from_components(false, vec!["Vec"], vec![syn_ty_param]);
                     let boxed_ty = syn_type_from_components(true, vec!["serde_mtproto", "Boxed"], vec![vec_ty]);
                     TypeIr::noncopyable(boxed_ty)
                 },
                 "WithSize" => {
-                    let ty_param = get_ty_param()?.clone().unboxed();
-                    let with_size_ty = syn_type_from_components(true, vec!["serde_mtproto", "WithSize"], vec![ty_param]);
+                    let ty_param = get_ty_param()?.clone();
+                    let ty_param_kind = ty_param.kind;
+                    let with_size_ty = syn_type_from_components(true, vec!["serde_mtproto", "WithSize"], vec![ty_param.unboxed()]);
 
-                    TypeIr::noncopyable(with_size_ty)
+                    match ty_param_kind {
+                        TypeIrKind::Dynamic => TypeIr::dynamic(with_size_ty),
+                        _ => TypeIr::noncopyable(with_size_ty),
+                    }
                 },
                 "Object" => {
                     let object_ty = syn_type_from_components(true, vec!["manual_types", "Object"], vec![]);
