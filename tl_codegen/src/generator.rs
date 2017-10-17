@@ -132,14 +132,72 @@ pub fn generate_ast_for(input: &str) -> syn::Crate {
 
     let ctors_typeck_info = constructors.ctors_typeck_info();
 
+    let mut dynamic_ctors: Vec<(Vec<String>, u32, syn::Stmt)> = vec![];
     for (namespaces, constructor_map) in &constructors.types {
+        dynamic_ctors.extend(constructor_map.values()
+            .flat_map(|c| c.to_syn_dynamic_ctors(&ctors_typeck_info).unwrap())); // FIXME
+
         let substructs = constructor_map.values()
-            .flat_map(|c| {
-                c.to_syn_data_type_items(&ctors_typeck_info).unwrap() // FIXME
-            });
+            .flat_map(|c| c.to_syn_data_type_items(&ctors_typeck_info).unwrap()); // FIXME
 
         process_namespaces(&mut krate.items, namespaces, substructs);
     }
+
+    dynamic_ctors.sort_by(|&(ref names1, tl_id1, ref _stmt1), &(ref names2, tl_id2, ref _stmt2)| {
+        names1.cmp(names2).then(tl_id1.cmp(&tl_id2))
+    });
+    let register_ctors = syn::Item {
+        ident: "register_ctors".into(),
+        vis: syn::Visibility::Public,
+        attrs: vec![
+            syn::Attribute {
+                style: syn::AttrStyle::Outer,
+                value: syn::MetaItem::NameValue(
+                    "doc".into(),
+                    syn::Lit::Str(
+                        "/// Registers all generated deserializable constructors to the provided \
+                         constructors map".to_owned(),
+                        syn::StrStyle::Cooked,
+                    ),
+                ),
+                is_sugared_doc: true,
+            },
+        ],
+        node: syn::ItemKind::Fn(
+            Box::new(syn::FnDecl {
+                inputs: vec![
+                    syn::FnArg::Captured(
+                        syn::Pat::Ident(
+                            syn::BindingMode::ByValue(syn::Mutability::Immutable),
+                            "cstore".into(),
+                            None,
+                        ),
+                        syn::Ty::Rptr(None, Box::new(syn::MutTy {
+                            ty: syn::Ty::Path(None, syn::Path {
+                                global: true,
+                                segments: vec![
+                                    "tl".into(),
+                                    "dynamic".into(),
+                                    "TLConstructorsMap".into(),
+                                ],
+                            }),
+                            mutability: syn::Mutability::Mutable,
+                        })),
+                    ),
+                ],
+                output: syn::FunctionRetTy::Default,
+                variadic: false,
+            }),
+            syn::Unsafety::Normal,
+            syn::Constness::NotConst,
+            None,
+            syn::Generics::default(),
+            Box::new(syn::Block {
+                stmts: dynamic_ctors.into_iter().map(|(_, _, stmt)| stmt).collect(),
+            }),
+        ),
+    };
+    krate.items.push(register_ctors);
 
     let mut rpc_items = vec![];
     for (namespaces, substructs) in &constructors.functions {
@@ -456,6 +514,36 @@ impl Constructors {
         }
 
         map
+    }
+
+    fn to_syn_dynamic_ctors<'a>(&self, ctors_typeck_info: &BTreeMap<&'a Constructor, TypeckKind>)
+        -> error::Result<Vec<(Vec<String>, u32, syn::Stmt)>>
+    {
+        let syn_output_ty = self.0[0].output.to_type_ir()?.unboxed();
+        let ty_name = self.0[0].output.names_vec().unwrap();  // FIXME
+
+        let dynamic_ctors = self.0.iter().filter_map(|c| {
+            if ctors_typeck_info[c] == TypeckKind::Dynamic {
+                return None;
+            }
+
+            c.tl_id.map(|tl_id| {
+                let syn_add = syn::Stmt::Semi(
+                    Box::new(syn::ExprKind::MethodCall(
+                        "add".into(),
+                        vec![syn_output_ty.clone()],
+                        vec![
+                            syn::ExprKind::Path(None, "cstore".into()).into(),
+                            syn::ExprKind::Lit(syn::Lit::Int(u64::from(tl_id), syn::IntTy::U32)).into(),
+                        ],
+                    ).into())
+                );
+
+                (ty_name.clone(), tl_id, syn_add)
+            })
+        }).collect();
+
+        Ok(dynamic_ctors)
     }
 }
 

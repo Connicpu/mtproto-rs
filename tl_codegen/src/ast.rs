@@ -209,18 +209,6 @@ impl TypeIr {
     pub fn ref_type(self) -> syn::Ty {
         wrap_option_type(self.needs_option(), self.impl_ref_type())
     }
-
-    /*pub fn ref_prefix(&self) -> syn::Ty {
-        if self.kind == TypeIrKind::Copyable { quote! {} } else { quote! { ref } }
-    }
-
-    pub fn reference_prefix(&self) -> syn::Ty {
-        if self.kind == TypeIrKind::Copyable { quote! {} } else { quote! { & } }
-    }
-
-    pub fn local_reference_prefix(&self) -> syn::Ty {
-        if self.kind == TypeIrKind::Copyable { quote! { & } } else { quote! {} }
-    }*/
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -347,12 +335,6 @@ impl Constructor {
                 })
         })
     }
-
-    /*fn variant_match_pattern_fields_ignored(&self) -> syn::Pat {
-        let path = self.variant_name().into();
-
-        syn::Pat::TupleStruct(path, vec![], Some(0))
-    }*/
 
     fn syn_generics(&self) -> syn::Generics {
         let ty_params = self.type_parameters.iter()
@@ -567,31 +549,6 @@ impl Constructor {
 
         Ok(vec![struct_block, impl_item])
     }
-
-    /*fn to_variant_def_destructure(&self, name: &syn::Ident) -> Option<quote::Tokens> {
-        if self.fields.is_empty() {
-            return None;
-        }
-
-        let fields = self.non_flag_fields()
-            .map(|f| {
-                let prefix = f.ty.to_type_ir()?.ref_prefix();
-                let name = no_conflict_ident(f.name.as_ref().unwrap()); // FIXME
-                quote! { #prefix #name }
-            })
-            .collect::<error::Result<Vec<_>>>()?;
-
-        Some(quote! {
-            #name { #( #fields ),* }
-        })
-    }*/
-
-    /*fn tl_id(&self) -> Option<quote::Tokens> {
-        self.tl_id.as_ref().map(|tl_id| {
-            let id: syn::Ident = format!("0x{:08x}", tl_id).into();
-            quote! { #id }
-        })
-    }*/
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
