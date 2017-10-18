@@ -17,7 +17,7 @@ pub enum TypeckKind { Static, Dynamic }
 impl TypeckKind {
     pub fn infer_basic_derives(&self) -> Vec<&'static str> {
         match *self {
-            TypeckKind::Static => vec!["Clone", "Debug", "Serialize", "Deserialize", "MtProtoSized"],
+            TypeckKind::Static => vec!["Clone", "Debug", "PartialEq", "PartialOrd", "Serialize", "Deserialize", "MtProtoSized"],
             TypeckKind::Dynamic => vec!["Clone", "Debug", "Serialize", "MtProtoSized"],
         }
     }
