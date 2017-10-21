@@ -88,8 +88,7 @@ macro_rules! tryf {
 
 
 fn auth(handle: Handle) -> Box<Future<Item = (), Error = error::Error>> {
-    let app_info = tryf!(AppInfo::read_from_toml_file("AppInfo.toml")
-        .chain_err(|| "this example needs a AppInfo.toml file with `api_id` and `api_hash` fields in it"));
+    let app_info = tryf!(fetch_app_info());
 
     let http_client = hyper::Client::new(&handle);
 
@@ -180,41 +179,20 @@ fn auth(handle: Handle) -> Box<Future<Item = (), Error = error::Error>> {
     Box::new(auth_future)
 }
 
-fn parse_response<T>(session: &mut Session, response_bytes: &[u8]) -> error::Result<Message<T>>
-    where T: ::std::fmt::Debug + DeserializeOwned
-{
-    println!("Response bytes: {:?}", &response_bytes);
-
-    if let Ok(response_str) = str::from_utf8(response_bytes) {
-        let response_str = response_str.trim();
-        let str_len = response_str.len();
-
-        if str_len >= 7 && &response_str[0..6] == "<html>" && &response_str[str_len-7..] == "</html>" {
-            let response_str = str::from_utf8(response_bytes)?;
-            let doc = Document::from(response_str);
-            println!("HTML error response:\n{}", response_str);
-
-            let error_text = match doc.find(Name("h1")).next() {
-                Some(elem) => elem.text(),
-                None => bail!(ErrorKind::UnknownHtmlErrorStructure(response_str.to_owned())),
-            };
-
-            bail!(ErrorKind::HtmlErrorText(error_text));
-        }
-    }
-
-    let len = response_bytes.len();
-
-    if len < 24 {
-        bail!(ErrorKind::BadMessage(len));
-    }
-
-    // We're being simplistic here, i.e. we actually should pass None if the message is plain-text
-    let encrypted_data_len = Some((len - 24) as u32);
-    let response = session.process_message(&response_bytes, encrypted_data_len)?;
-    println!("Message received: {:#?}", &response);
-
-    Ok(response)
+/// Obtain `AppInfo` from all possible known sources in the following
+/// priority:
+///
+/// * Environment variables `MTPROTO_API_ID` and `MTPROTO_API_HASH`;
+/// * `AppInfo.toml` file with `api_id` and `api_hash` fields.
+fn fetch_app_info() -> error::Result<AppInfo> {
+    AppInfo::from_env().or_else(|from_env_err| {
+        AppInfo::read_from_toml_file("AppInfo.toml").map_err(|read_toml_err| {
+            from_env_err.chain_err(|| read_toml_err)
+        })
+    }).chain_err(|| {
+        "this example needs either both `MTPROTO_API_ID` and `MTPROTO_API_HASH` environment \
+         variables set, or an AppInfo.toml file with `api_id` and `api_hash` fields in it"
+    })
 }
 
 fn create_http_request<T>(session: &mut Session,
@@ -260,6 +238,43 @@ fn future_request(http_client: &hyper::Client<hyper::client::HttpConnector>,
         .map_err(|err| err.into());
 
     Box::new(future)
+}
+
+fn parse_response<T>(session: &mut Session, response_bytes: &[u8]) -> error::Result<Message<T>>
+    where T: ::std::fmt::Debug + DeserializeOwned
+{
+    println!("Response bytes: {:?}", &response_bytes);
+
+    if let Ok(response_str) = str::from_utf8(response_bytes) {
+        let response_str = response_str.trim();
+        let str_len = response_str.len();
+
+        if str_len >= 7 && &response_str[0..6] == "<html>" && &response_str[str_len-7..] == "</html>" {
+            let response_str = str::from_utf8(response_bytes)?;
+            let doc = Document::from(response_str);
+            println!("HTML error response:\n{}", response_str);
+
+            let error_text = match doc.find(Name("h1")).next() {
+                Some(elem) => elem.text(),
+                None => bail!(ErrorKind::UnknownHtmlErrorStructure(response_str.to_owned())),
+            };
+
+            bail!(ErrorKind::HtmlErrorText(error_text));
+        }
+    }
+
+    let len = response_bytes.len();
+
+    if len < 24 {
+        bail!(ErrorKind::BadMessage(len));
+    }
+
+    // We're being simplistic here, i.e. we actually should pass None if the message is plain-text
+    let encrypted_data_len = Some((len - 24) as u32);
+    let response = session.process_message(&response_bytes, encrypted_data_len)?;
+    println!("Message received: {:#?}", &response);
+
+    Ok(response)
 }
 
 

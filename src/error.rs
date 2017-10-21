@@ -6,8 +6,9 @@ error_chain! {
     }
 
     foreign_links {
-        Io(::std::io::Error);
+        Envy(::envy::Error);
         FromUtf8(::std::string::FromUtf8Error);
+        Io(::std::io::Error);
         OpenSsl(::openssl::error::ErrorStack);
         TomlDeserialize(::toml::de::Error);
     }

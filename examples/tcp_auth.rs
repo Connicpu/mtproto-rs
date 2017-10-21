@@ -89,8 +89,7 @@ macro_rules! tryf {
 fn auth<M>(handle: Handle, mut tcp_mode: M) -> Box<Future<Item = (), Error = error::Error>>
     where M: 'static + MtProtoTcpMode
 {
-    let app_info = tryf!(AppInfo::read_from_toml_file("AppInfo.toml")
-        .chain_err(|| "this example needs a AppInfo.toml file with `api_id` and `api_hash` fields in it"));
+    let app_info = tryf!(fetch_app_info());
 
     let remote_addr = "149.154.167.51:443".parse().unwrap();
     println!("Address: {:?}", &remote_addr);
@@ -185,6 +184,22 @@ fn auth<M>(handle: Handle, mut tcp_mode: M) -> Box<Future<Item = (), Error = err
     });
 
     Box::new(auth_future)
+}
+
+/// Obtain `AppInfo` from all possible known sources in the following
+/// priority:
+///
+/// * Environment variables `MTPROTO_API_ID` and `MTPROTO_API_HASH`;
+/// * `AppInfo.toml` file with `api_id` and `api_hash` fields.
+fn fetch_app_info() -> error::Result<AppInfo> {
+    AppInfo::from_env().or_else(|from_env_err| {
+        AppInfo::read_from_toml_file("AppInfo.toml").map_err(|read_toml_err| {
+            from_env_err.chain_err(|| read_toml_err)
+        })
+    }).chain_err(|| {
+        "this example needs either both `MTPROTO_API_ID` and `MTPROTO_API_HASH` environment \
+         variables set, or an AppInfo.toml file with `api_id` and `api_hash` fields in it"
+    })
 }
 
 fn create_serialized_message<T>(session: &mut Session,

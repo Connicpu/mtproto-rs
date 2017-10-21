@@ -32,7 +32,7 @@ impl<T: 'static + Clone + TLObject> TLObjectCloneToBox for T {
 }
 
 
-/// For any object whose type is representable in Type Language.
+/// For any object type of which is representable in Type Language.
 pub trait TLObject: Any + ErasedSerialize + Identifiable + MtProtoSized + TLObjectCloneToBox {
     fn as_any(&self) -> &Any;
     fn as_box_any(self: Box<Self>) -> Box<Any>;

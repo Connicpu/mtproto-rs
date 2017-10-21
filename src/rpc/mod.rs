@@ -5,6 +5,7 @@ use std::io::Read;
 use std::path::Path;
 
 use chrono::{DateTime, TimeZone, Utc};
+use envy;
 use erased_serde::Serialize as ErasedSerialize;
 use serde::Deserialize;
 use toml;
@@ -56,17 +57,27 @@ impl AppInfo {
         }
     }
 
+    /// Obtain an `AppInfo` from environment variables.
+    ///
+    /// This method works with `MTPROTO_API_ID` and `MTPROTO_API_HASH`
+    /// variables.
+    pub fn from_env() -> error::Result<AppInfo> {
+        envy::prefixed("MTPROTO_")
+            .from_env::<AppInfo>()
+            .map_err(Into::into)
+    }
+
     /// Read an `AppInfo` from a TOML value.
     pub fn read_from_toml_value(value: toml::Value) -> error::Result<AppInfo> {
         AppInfo::deserialize(value).map_err(Into::into)
     }
 
-    /// Read an `AppInfo` from a string.
+    /// Read an `AppInfo` from a TOML string.
     pub fn read_from_toml_str(s: &str) -> error::Result<AppInfo> {
         toml::from_str(s).map_err(Into::into)
     }
 
-    /// Read an `AppInfo` from a file.
+    /// Read an `AppInfo` from a TOML file.
     pub fn read_from_toml_file<P: AsRef<Path>>(path: P) -> error::Result<AppInfo> {
         let mut buf = String::new();
         let mut file = File::open(path)?;
