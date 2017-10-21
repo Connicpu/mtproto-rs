@@ -1,32 +1,26 @@
 extern crate tl_codegen;
 
-use std::ffi::OsStr;
-use std::fs::{self, File};
-use std::io::{self, Read, Write};
-use std::path::PathBuf;
+use std::fs::File;
+use std::io::{self, BufRead, BufReader, Read, Write};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 
-const TL_SCHEMA_DIR: &'static str = "./tl";
-const RUST_SCHEMA_FILE: &'static str = "./src/schema.rs";
+const TL_SCHEMA_DIR:       &'static str = "./tl";
+const TL_SCHEMA_LIST_FILE: &'static str = "./tl/tl-schema-list.txt";
+const RUST_SCHEMA_FILE:    &'static str = "./src/schema.rs";
 
 fn collect_input() -> io::Result<String> {
-    let mut tl_files = fs::read_dir(TL_SCHEMA_DIR)?.filter_map(|dir_entry| {
-        match dir_entry {
-            Ok(entry) => {
-                let path = entry.path();
-
-                if entry.path().extension().and_then(OsStr::to_str) == Some("tl") {
-                    Some(Ok(path))
-                } else {
-                    None
-                }
-            },
-            Err(e) => Some(Err(e)),
+    let mut tl_files = BufReader::new(File::open(TL_SCHEMA_LIST_FILE)?).lines().filter_map(|line| {
+        match line {
+            Ok(ref line) if line.starts_with("//") => None,  // This line is a comment
+            Ok(filename) => Some(Ok(Path::new(TL_SCHEMA_DIR).join(filename))),
+            Err(e) => Some(Err(e)),  // Do not ignore errors
         }
     }).collect::<io::Result<Vec<PathBuf>>>()?;
 
     tl_files.sort();
+    println!("cargo:rerun-if-changed={}", TL_SCHEMA_LIST_FILE);
 
     let mut input = String::new();
     for tl_file in tl_files {
