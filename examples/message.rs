@@ -29,10 +29,11 @@ fn plain_text() -> error::Result<()> {
     let app_info = AppInfo::new(9000, "random text".to_owned());
     let mut session = Session::new(892103, app_info);
 
-    let message = session.create_message(23, MessageType::PlainText)?;
+    let message = session.create_message(23, MessageType::PlainText)?.left().unwrap();
     println!("{:#?}", message);
     let bytes = serde_mtproto::to_bytes(&message)?;
     println!("{:?}", bytes);
+    // Since the message is plain-text, we don't need the second parameter
     let msg: Message<i32> = session.process_message(&bytes, None)?;
     println!("{:#?}", msg);
 
@@ -53,17 +54,19 @@ fn encrypted() -> error::Result<()> {
     };
     session.add_server_salts(vec![future_salt]);
 
-    let message = session.create_message(23, MessageType::Encrypted)?;
+    let message = session.create_message(23, MessageType::Encrypted)?.left().unwrap();
     println!("{:?}", message);
     let bytes = serde_mtproto::to_bytes(&message)?;
     println!("{:?}", bytes);
-    let msg: Message<i32> = session.process_message(&bytes, Some(24))?;
+    // Pass number of bytes of encrypted data as second parameter
+    let msg: Message<i32> = session.process_message(&bytes, Some(48))?;
     println!("{:?}", msg);
 
     assert_eq!(message, msg);
 
     Ok(())
 }
+
 
 fn run() -> error::Result<()> {
     env_logger::init()?;
