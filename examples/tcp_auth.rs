@@ -209,7 +209,10 @@ fn create_serialized_message<T>(session: &mut Session,
     //where T: ::std::fmt::Debug + Serialize + Identifiable + MtProtoSized
     where T: ::std::fmt::Debug + Serialize + TLObject
 {
-    let message = session.create_message(data, message_type)?;
+    let message = match message_type {
+        MessageType::PlainText => session.create_plain_text_message(data)?,
+        MessageType::Encrypted => session.create_encrypted_message_no_acks(data)?.unwrap(),
+    };
     println!("Message to send: {:#?}", &message);
     let serialized_message = serde_mtproto::to_bytes(&message)?;
     println!("Request bytes: {:?}", &serialized_message);

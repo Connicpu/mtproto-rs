@@ -4,16 +4,16 @@ use std::cmp;
 use std::mem;
 
 use chrono::{Timelike, Utc};
-use either::Either;
 use serde::de::{DeserializeSeed, DeserializeOwned};
 use serde_mtproto::{Boxed, Identifiable, MtProtoSized, WithSize};
 
 use error::{self, ErrorKind};
 use manual_types::Object;
+use tl::TLObject;
 
 use super::{AppInfo, Salt};
 use super::encryption::AuthKey;
-use super::message::{DecryptedData, Message, MessageSeed, MessageType};
+use super::message::{DecryptedData, Message, MessageSeed};
 
 
 fn next_message_id() -> i64 {
@@ -120,58 +120,72 @@ impl Session {
         }
     }
 
-    /// Create a `Message` tied to this session.
-    pub fn create_message<T>(&mut self,
-                             body: T,
-                             msg_type: MessageType)
-                            -> error::Result<Either<Message<T>, Message<::schema::manual::MessageContainer>>>
-        where T: ::tl::dynamic::TLObject
+    /// Create a plain-text message tied to this session.
+    pub fn create_plain_text_message<T>(&self, body: T) -> error::Result<Message<T>>
+        where T: TLObject
     {
-        let message = match msg_type {
-            MessageType::PlainText => {
-                Either::Left(Message::PlainText {
-                    message_id: next_message_id(),
-                    body: WithSize::new(Boxed::new(body))?,
-                })
-            },
-            MessageType::Encrypted => {
-                if self.to_ack.is_empty() {
-                    let message = self.impl_create_decrypted_message(body, MessagePurpose::Content)?;
+        Ok(Message::PlainText {
+            message_id: next_message_id(),
+            body: WithSize::new(Boxed::new(body))?,
+        })
+    }
 
-                    Either::Left(message)
-                } else {
-                    let acks = ::schema::MsgsAck {
-                        msg_ids: Boxed::new(mem::replace(&mut self.to_ack, vec![])),
-                    };
+    /// Create an encrypted message without acks.
+    ///
+    /// On success returns `Ok(message)` if there are no acks in this
+    /// session and `Ok(None)` otherwise.
+    pub fn create_encrypted_message_no_acks<T>(&mut self, body: T) -> error::Result<Option<Message<T>>>
+        where T: TLObject
+    {
+        if !self.to_ack.is_empty() {
+            return Ok(None);
+        }
 
-                    let msg_container = ::schema::manual::MessageContainer {
-                        messages: vec![
-                            ::schema::manual::Message {
-                                msg_id: next_message_id(),
-                                seqno: self.next_seq_no(MessagePurpose::NonContent),
-                                body: WithSize::new(Boxed::new(Box::new(acks) as Object))?,
-                            },
-                            ::schema::manual::Message {
-                                msg_id: next_message_id(),
-                                seqno: self.next_seq_no(MessagePurpose::Content),
-                                body: WithSize::new(Boxed::new(Box::new(body) as Object))?,
-                            }
-                        ],
-                    };
+        let message = self.impl_create_decrypted_message(body, MessagePurpose::Content)?;
 
-                    let msg_container_id = msg_container.messages[1].msg_id;
-                    let mut message = self.impl_create_decrypted_message(msg_container, MessagePurpose::Content)?;
-                    match *&mut message {
-                        Message::PlainText { .. } => unreachable!(),
-                        Message::Decrypted { ref mut decrypted_data } => decrypted_data.message_id = msg_container_id,
-                    }
+        Ok(Some(message))
+    }
 
-                    Either::Right(message)
-                }
-            },
+    /// Create an encrypted message with acks.
+    ///
+    /// On success returns `Ok(message)` if there are acks in this
+    /// session and `Ok(None)` otherwise.
+    pub fn create_encrypted_message_with_acks<T>(&mut self, body: T)
+        -> error::Result<Option<Message<::schema::manual::MessageContainer>>>
+        where T: TLObject
+    {
+        if self.to_ack.is_empty() {
+            return Ok(None);
+        }
+
+        let acks = ::schema::MsgsAck {
+            msg_ids: Boxed::new(mem::replace(&mut self.to_ack, vec![])),
         };
 
-        Ok(message)
+        let msg_container = ::schema::manual::MessageContainer {
+            messages: vec![
+                ::schema::manual::Message {
+                    msg_id: next_message_id(),
+                    seqno: self.next_seq_no(MessagePurpose::NonContent),
+                    body: WithSize::new(Boxed::new(Box::new(acks) as Object))?,
+                },
+                ::schema::manual::Message {
+                    msg_id: next_message_id(),
+                    seqno: self.next_seq_no(MessagePurpose::Content),
+                    body: WithSize::new(Boxed::new(Box::new(body) as Object))?,
+                }
+            ],
+        };
+
+        let msg_container_id = msg_container.messages[1].msg_id;
+        let mut message = self.impl_create_decrypted_message(msg_container, MessagePurpose::Content)?;
+
+        match *&mut message {
+            Message::PlainText { .. } => unreachable!(),
+            Message::Decrypted { ref mut decrypted_data } => decrypted_data.message_id = msg_container_id,
+        }
+
+        Ok(Some(message))
     }
 
     fn impl_create_decrypted_message<T>(&mut self, body: T, purpose: MessagePurpose) -> error::Result<Message<T>>

@@ -1,6 +1,4 @@
-//#![feature(specialization)]
 #![recursion_limit = "128"]
-extern crate either;
 
 extern crate byteorder;
 extern crate chrono;
