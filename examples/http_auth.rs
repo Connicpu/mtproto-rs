@@ -14,6 +14,7 @@ extern crate serde_mtproto;
 extern crate tokio_core;
 
 
+use std::fmt::Debug;
 use std::str;
 
 use byteorder::{ByteOrder, BigEndian};
@@ -105,7 +106,8 @@ fn auth(handle: Handle) -> Box<Future<Item = (), Error = error::Error>> {
     let auth_future = future_request(&http_client, http_request).and_then(move |response_bytes|
         -> Box<Future<Item = (Vec<u8>, Session), Error = error::Error>>
     {
-        let response: Message<schema::ResPQ> = tryf!(parse_response(&mut session, &response_bytes));
+        let response: Message<schema::ResPQ> =
+            tryf!(parse_response(&mut session, &response_bytes, MessageType::PlainText));
 
         let res_pq = response.unwrap_plain_text_body();
 
@@ -172,7 +174,8 @@ fn auth(handle: Handle) -> Box<Future<Item = (), Error = error::Error>> {
 
         Box::new(future_request(&http_client, http_request).map(|bytes| (bytes, session)))
     }).and_then(|(response_bytes, mut session)| {
-        let _: Message<schema::Server_DH_Params> = tryf!(parse_response(&mut session, &response_bytes));
+        let _: Message<schema::Server_DH_Params> =
+            tryf!(parse_response(&mut session, &response_bytes, MessageType::PlainText));
 
         Box::new(futures::future::ok(()))
     });
@@ -200,7 +203,7 @@ fn create_http_request<T>(session: &mut Session,
                           data: T,
                           message_type: MessageType)
                          -> error::Result<hyper::Request>
-    where T: ::std::fmt::Debug + Serialize + TLObject
+    where T: Debug + Serialize + TLObject
 {
     let message = match message_type {
         MessageType::PlainText => session.create_plain_text_message(data)?,
@@ -243,8 +246,11 @@ fn future_request(http_client: &hyper::Client<hyper::client::HttpConnector>,
     Box::new(future)
 }
 
-fn parse_response<T>(session: &mut Session, response_bytes: &[u8]) -> error::Result<Message<T>>
-    where T: ::std::fmt::Debug + DeserializeOwned
+fn parse_response<T>(session: &mut Session,
+                     response_bytes: &[u8],
+                     message_type: MessageType)
+                    -> error::Result<Message<T>>
+    where T: Debug + DeserializeOwned
 {
     println!("Response bytes: {:?}", &response_bytes);
 
@@ -272,8 +278,11 @@ fn parse_response<T>(session: &mut Session, response_bytes: &[u8]) -> error::Res
         bail!(ErrorKind::BadMessage(len));
     }
 
-    // We're being simplistic here, i.e. we actually should pass None if the message is plain-text
-    let encrypted_data_len = Some((len - 24) as u32);
+    let encrypted_data_len = match message_type {
+        MessageType::PlainText => None,
+        MessageType::Encrypted => Some((len - 24) as u32),
+    };
+
     let response = session.process_message(&response_bytes, encrypted_data_len)?;
     println!("Message received: {:#?}", &response);
 
