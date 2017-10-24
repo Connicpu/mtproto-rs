@@ -28,6 +28,7 @@ use mtproto::schema;
 use rand::{Rng, ThreadRng};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde_mtproto::MtProtoSized;
 use tokio_core::net::TcpStream;
 use tokio_core::reactor::{Core, Handle};
 
@@ -206,7 +207,6 @@ fn create_serialized_message<T>(session: &mut Session,
                                 data: T,
                                 message_type: MessageType)
                                -> error::Result<Vec<u8>>
-    //where T: ::std::fmt::Debug + Serialize + Identifiable + MtProtoSized
     where T: ::std::fmt::Debug + Serialize + TLObject
 {
     let message = match message_type {
@@ -216,6 +216,9 @@ fn create_serialized_message<T>(session: &mut Session,
     println!("Message to send: {:#?}", &message);
     let serialized_message = serde_mtproto::to_bytes(&message)?;
     println!("Request bytes: {:?}", &serialized_message);
+
+    // Here we do mean to unwrap since it should fail if something goes wrong anyway
+    assert_eq!(message.size_hint().unwrap(), serialized_message.len());
 
     Ok(serialized_message)
 }

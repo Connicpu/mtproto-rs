@@ -34,7 +34,7 @@ Currently implemented and planned features include:
 
 ## Examples
 
-There are 4 examples which you can build and run:
+There are 3 examples which you can build and run:
 
 ### `tcp_auth`
 
@@ -57,15 +57,6 @@ Based on [tokio](https://tokio.rs) and [hyper](https://hyper.rs).
 $ cargo run --example http_auth
 ```
 
-### `message`
-
-Basic message creation and processing, shows how to use `Session` and
-`Message` types.
-
-```sh
-$ cargo run --example message
-```
-
 ### `dynamic`
 
 Dynamic typing using `TLObject` in action.
@@ -73,6 +64,8 @@ Dynamic typing using `TLObject` in action.
 ```sh
 $ cargo run --example dynamic
 ```
+
+You can also look at [tests](./tests/) for more use cases which are automatically tested.
 
 
 ## License

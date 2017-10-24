@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use extprim::i128::i128;
 use serde::ser::{self, Error as SerError, Serialize};
 use serde::de::{self, DeserializeOwned, DeserializeSeed, Error as DeError, SeqAccess, Visitor};
-use serde_mtproto::{self, Boxed, Identifiable, MtProtoSized, WithSize, UnsizedByteBuf, UnsizedByteBufSeed};
+use serde_mtproto::{self, Boxed, Identifiable, MtProtoSized, WithSize, UnsizedByteBuf, UnsizedByteBufSeed, size_hint_from_unsized_byte_seq_len};
 
 use error::{self, ErrorKind};
 
@@ -41,7 +41,7 @@ pub enum Message<T> {
 // We use signed integers here because that's the default integer representation in MTProto;
 // by trying to match representations we can synchronize the range of allowed values
 /// Holds data either to be encrypted (in requests) or after decryption (in responses).
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, MtProtoSized)]
 pub struct DecryptedData<T> {
     pub(super) salt: i64,
     pub(super) session_id: i64,
@@ -50,8 +50,52 @@ pub struct DecryptedData<T> {
     pub(super) body: WithSize<Boxed<T>>,
 
     #[serde(skip)]
+    #[mtproto_sized(skip)]
     pub(super) key: AuthKey,
 }
+
+#[derive(Debug, Serialize)]
+enum RawMessage<'msg, T: 'msg> {
+    PlainText {
+        auth_key_id: i64,
+        message_id: i64,
+        ref_body: EitherRef<'msg, WithSize<Boxed<T>>>,
+    },
+    Encrypted {
+        auth_key_id: i64,
+        msg_key: i128,
+        encrypted_data: UnsizedByteBuf,
+    },
+}
+
+
+impl<T: MtProtoSized> MtProtoSized for Message<T> {
+    fn size_hint(&self) -> serde_mtproto::Result<usize> {
+        // just a dummy value, not an actual one
+        let auth_key_id_size = i64::size_hint(&0)?;
+
+        let size_hint = match *self {
+            Message::PlainText { message_id, ref body } => {
+                let message_id_size = message_id.size_hint()?;
+                let body_size = body.size_hint()?;
+
+                auth_key_id_size + message_id_size + body_size
+            },
+            Message::Decrypted { ref decrypted_data } => {
+                // just a dummy value, not an actual one
+                let msg_key_size = i128::size_hint(&i128::new(0))?;
+                let minimum_encrypted_data_size = decrypted_data.size_hint()?;
+                let actual_encrypted_data_size =
+                    size_hint_from_unsized_byte_seq_len(minimum_encrypted_data_size)?;
+
+                auth_key_id_size + msg_key_size + actual_encrypted_data_size
+            },
+        };
+
+        Ok(size_hint)
+    }
+}
+
 
 impl<T: Identifiable + MtProtoSized> Message<T> {
     /// Returns `Some(body)` if the message was plain-text.
@@ -91,36 +135,75 @@ impl<T: Identifiable + MtProtoSized> Message<T> {
     }
 }
 
+impl<T> Message<T> {
+    fn to_raw_message<'msg>(&'msg self) -> error::Result<RawMessage<'msg, T>>
+        where T: Serialize
+    {
+        let raw_message = match *self {
+            Message::PlainText { message_id, ref body } => {
+                RawMessage::PlainText {
+                    auth_key_id: 0,
+                    message_id: message_id,
+                    ref_body: EitherRef::Ref(body),
+                }
+            },
+            Message::Decrypted { ref decrypted_data } => {
+                let decrypted_data_serialized = serde_mtproto::to_bytes(decrypted_data)?;
+                let (auth_key_id, msg_key, encrypted_data) = decrypted_data.key
+                    .encrypt_message_bytes(&decrypted_data_serialized)?;
+
+                RawMessage::Encrypted {
+                    auth_key_id: auth_key_id,
+                    msg_key: msg_key,
+                    encrypted_data: UnsizedByteBuf::new(encrypted_data),
+                }
+            },
+        };
+
+        Ok(raw_message)
+    }
+
+    fn from_raw_message<'msg>(raw_message: RawMessage<'msg, T>,
+                              opt_key: Option<AuthKey>)
+                             -> error::Result<Message<T>>
+        where T: DeserializeOwned
+    {
+       let message =  match raw_message {
+            RawMessage::PlainText { auth_key_id, message_id, ref_body } => {
+                assert_eq!(auth_key_id, 0);
+
+                Message::PlainText {
+                    message_id: message_id,
+                    body: ref_body.into_owned().unwrap(), // FIXME
+                }
+            },
+            RawMessage::Encrypted { auth_key_id, msg_key, encrypted_data } => {
+                let key = opt_key.ok_or(ErrorKind::NoAuthKey)?;
+                let decrypted_data_serialized = key
+                    .decrypt_message_bytes(auth_key_id, msg_key, &encrypted_data.into_inner())?;
+                let mut decrypted_data: DecryptedData<T> =
+                    serde_mtproto::from_reader(decrypted_data_serialized.as_slice(), None)?;
+
+                decrypted_data.key = key;
+
+                Message::Decrypted {
+                    decrypted_data: decrypted_data,
+                }
+            },
+        };
+
+        Ok(message)
+    }
+}
+
 impl<T: Serialize> Serialize for Message<T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where S: ser::Serializer
     {
-        match *self {
-            Message::PlainText { ref message_id, ref body } => {
-                let msg_to_serialize = RawMessage::PlainText {
-                    auth_key_id: 0,
-                    message_id: *message_id,
-                    body: EitherRef::Ref(&body),
-                };
-
-                msg_to_serialize.serialize(serializer)
-            },
-            Message::Decrypted { ref decrypted_data } => {
-                let decrypted_data_serialized = serde_mtproto::to_bytes(decrypted_data)
-                    .map_err(S::Error::custom)?;
-                let (auth_key_id, msg_key, encrypted_data) = decrypted_data.key
-                    .encrypt_message_bytes(&decrypted_data_serialized)
-                    .map_err(S::Error::custom)?;
-
-                let msg_to_serialize: RawMessage<()> = RawMessage::Encrypted {
-                    auth_key_id: auth_key_id,
-                    msg_key: msg_key,
-                    encrypted_data: UnsizedByteBuf::new(encrypted_data),
-                };
-
-                msg_to_serialize.serialize(serializer)
-            },
-        }
+        self.to_raw_message()
+            .map_err(S::Error::custom)?
+            .serialize(serializer)
+            .map_err(S::Error::custom)
     }
 }
 
@@ -170,41 +253,40 @@ impl<'de, T: DeserializeOwned> DeserializeSeed<'de> for MessageSeed<T> {
                 let auth_key_id = seq.next_element()?
                     .ok_or(errconv(ErrorKind::NotEnoughFields("Message::?", 0)))?;
 
-                let message = if auth_key_id == 0 {
+                let raw_message = if auth_key_id == 0 {
                     let message_id = seq.next_element()?
                         .ok_or(errconv(ErrorKind::NotEnoughFields("Message::PlainText", 1)))?;
-                    let body: EitherRef<WithSize<Boxed<T>>> = seq.next_element()?
+                    let ref_body: EitherRef<WithSize<Boxed<T>>> = seq.next_element()?
                         .ok_or(errconv(ErrorKind::NotEnoughFields("Message::PlainText", 2)))?;
 
-                    Message::PlainText {
+                    RawMessage::PlainText {
+                        auth_key_id: 0,
                         message_id: message_id,
-                        body: body.into_owned().unwrap(),    // we know it's owned here
+                        ref_body: ref_body,
                     }
                 } else {
                     if self.encrypted_data_len.is_none() {
                         bail!(errconv(ErrorKind::NoEncryptedDataLengthProvided));
                     }
 
-                    let message_key = seq.next_element()?
+                    let msg_key = seq.next_element()?
                         .ok_or(errconv(ErrorKind::NotEnoughFields("Message::Decrypted", 1)))?;
 
                     let seed = UnsizedByteBufSeed::new(self.encrypted_data_len.unwrap());
                     let encrypted_data = seq.next_element_seed(seed)?
                         .ok_or(errconv(ErrorKind::NotEnoughFields("Message::Decrypted", 2)))?;
 
-                    let key = self.opt_key.ok_or(errconv(ErrorKind::NoAuthKey))?;
-                    let decrypted_data_serialized = key
-                        .decrypt_message_bytes(auth_key_id, message_key, &encrypted_data.into_inner())
-                        .map_err(A::Error::custom)?;
-                    let mut decrypted_data: DecryptedData<T> = serde_mtproto::from_reader(decrypted_data_serialized.as_slice(), None)
-                        .map_err(A::Error::custom)?;
+                    let raw_message = RawMessage::Encrypted {
+                        auth_key_id: auth_key_id,
+                        msg_key: msg_key,
+                        encrypted_data: encrypted_data,
+                    };
 
-                    decrypted_data.key = key;
-
-                    Message::Decrypted {
-                        decrypted_data: decrypted_data,
-                    }
+                    raw_message
                 };
+
+                let message = Message::from_raw_message(raw_message, self.opt_key)
+                    .map_err(A::Error::custom)?;
 
                 Ok(message)
             }
@@ -218,19 +300,4 @@ impl<'de, T: DeserializeOwned> DeserializeSeed<'de> for MessageSeed<T> {
 
         deserializer.deserialize_tuple(3, visitor)
     }
-}
-
-
-#[derive(Debug, Serialize)]
-enum RawMessage<'a, T: 'a> {
-    PlainText {
-        auth_key_id: i64,
-        message_id: i64,
-        body: EitherRef<'a, WithSize<Boxed<T>>>,
-    },
-    Encrypted {
-        auth_key_id: i64,
-        msg_key: i128,
-        encrypted_data: UnsizedByteBuf,
-    },
 }

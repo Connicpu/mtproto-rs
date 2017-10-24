@@ -28,6 +28,7 @@ use select::document::Document;
 use select::predicate::Name;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde_mtproto::MtProtoSized;
 use tokio_core::reactor::{Core, Handle};
 
 
@@ -199,7 +200,6 @@ fn create_http_request<T>(session: &mut Session,
                           data: T,
                           message_type: MessageType)
                          -> error::Result<hyper::Request>
-    //where T: ::std::fmt::Debug + Serialize + Identifiable + MtProtoSized
     where T: ::std::fmt::Debug + Serialize + TLObject
 {
     let message = match message_type {
@@ -211,7 +211,7 @@ fn create_http_request<T>(session: &mut Session,
     println!("Request bytes: {:?}", &serialized_message);
 
     // Here we do mean to unwrap since it should fail if something goes wrong anyway
-    //assert_eq!(message.size_hint().unwrap(), serialized_message.len());
+    assert_eq!(message.size_hint().unwrap(), serialized_message.len());
 
     let mut request = hyper::Request::new(
         hyper::Method::Post,

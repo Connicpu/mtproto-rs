@@ -1,3 +1,4 @@
+// `error_chain!` can nest quite deeply
 #![recursion_limit = "128"]
 
 extern crate byteorder;
@@ -19,31 +20,6 @@ extern crate serde_mtproto;
 extern crate serde_mtproto_derive;
 extern crate toml;
 
-/*pub mod error {
-    error_chain! {
-        foreign_links {
-            Io(::std::io::Error);
-            Utf8(::std::str::Utf8Error);
-            FromUtf8(::std::string::FromUtf8Error);
-            Openssl(::openssl::error::ErrorStack);
-        }
-
-        errors {
-            InvalidData {}
-            InvalidType(expected: Vec<::tl::parsing::ConstructorId>, received: Option<::tl::parsing::ConstructorId>) {}
-            BoxedAsBare {}
-            ReceivedSendType {}
-            UnsupportedLayer {}
-            NoAuthKey {}
-            NoSalts {}
-            WrongAuthKey {}
-            InvalidLength {}
-            Unknown {}
-            FactorizationFailure {}
-            AuthenticationFailure {}
-        }
-    }
-}*/
 
 mod manual_types;
 mod utils;
