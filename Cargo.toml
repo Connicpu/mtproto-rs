@@ -24,7 +24,10 @@ serde_mtproto_derive = { git = "https://github.com/hcpl/serde_mtproto" }
 toml = "0.4"
 
 [build-dependencies]
-tl_codegen = { path = "tl_codegen", features = ["printing"] }
+env_logger = "0.4"
+error-chain = "0.11"
+log = "0.3"
+tl_codegen = { path = "tl_codegen" }
 
 [dev-dependencies]
 crc = "1.5"

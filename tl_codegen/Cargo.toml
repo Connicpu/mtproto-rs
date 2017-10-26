@@ -7,10 +7,9 @@ authors = ["Connor Hilarides <connorcpu@live.com>"]
 error-chain = "0.11"
 petgraph = { version = "0.4", default-features = false }
 pom = "1.0"
-quote = { version = "0.3", optional = true }
-syn = { version = "0.11", default-features = false, features = ["full"] }
+quote = "0.3"
+syn = { version = "0.11", default-features = false, features = ["full", "printing"] }
 synom = { version = "0.11", optional = true }
 
 [features]
 parsing = ["syn/parsing", "synom"]
-printing = ["syn/printing", "quote"]

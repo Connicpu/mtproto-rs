@@ -6,14 +6,18 @@ rust:
   - beta
   - nightly
 
-script:
-  - cargo test --verbose --all
-  - cargo build --verbose --all --examples
+matrix:
+  allow_failures:
+    - rust: nightly
+
+cache: cargo
 
 env:
   global:
     - RUST_BACKTRACE=1
 
-matrix:
-  allow_failures:
-    - rust: nightly
+script:
+  - pwd
+  - ls -la
+  - cargo test --verbose --all
+  - cargo build --verbose --all --examples

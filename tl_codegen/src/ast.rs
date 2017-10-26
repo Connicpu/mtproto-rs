@@ -358,26 +358,12 @@ impl Constructor {
                 attrs: vec![],
                 ident: syn::Ident::new(field.name.clone().unwrap()), // FIXME
                 bounds: vec![
-                    syn::TyParamBound::Trait(
-                        syn::PolyTraitRef {
-                            bound_lifetimes: vec![],
-                            trait_ref: syn::Path {
-                                global: true,
-                                segments: vec!["rpc".into(), "RpcFunction".into()],
-                            },
-                        },
-                        syn::TraitBoundModifier::None,
-                    ),
-                    syn::TyParamBound::Trait(
-                        syn::PolyTraitRef {
-                            bound_lifetimes: vec![],
-                            trait_ref: syn::Path {
-                                global: true,
-                                segments: vec!["serde".into(), "Serialize".into()],
-                            },
-                        },
-                        syn::TraitBoundModifier::None,
-                    ),
+                    syn::parse_ty_param_bound(quote! {
+                        ::rpc::RpcFunction
+                    }.as_str()).unwrap(),
+                    syn::parse_ty_param_bound(quote! {
+                        ::serde::Serialize
+                    }.as_str()).unwrap(),
                 ],
                 default: None,
             })
@@ -522,30 +508,12 @@ impl Constructor {
             }
         }
 
-        let impl_item = syn::Item {
-            ident: "".into(),
-            vis: syn::Visibility::Inherited,
-            attrs: vec![],
-            node: syn::ItemKind::Impl(
-                syn::Unsafety::Normal,
-                syn::ImplPolarity::Positive,
-                syn_rpc_generics,
-                Some(syn::Path {
-                    global: true,
-                    segments: vec!["rpc".into(), "RpcFunction".into()],
-                }),
-                Box::new(syn_type_from_components(false, vec![name], generic_types)),
-                vec![
-                    syn::ImplItem {
-                        ident: "Reply".into(),
-                        vis: syn::Visibility::Inherited,
-                        defaultness: syn::Defaultness::Final,
-                        attrs: vec![],
-                        node: syn::ImplItemKind::Type(output_ty),
-                    }
-                ],
-            ),
-        };
+        let name = syn::Ident::new(name);
+        let impl_item = syn::parse_item(quote! {
+            impl #syn_rpc_generics ::rpc::RpcFunction for #name<#(#generic_types),*> {
+                type Reply = #output_ty;
+            }
+        }.as_str()).unwrap();
 
         Ok(vec![struct_block, impl_item])
     }
