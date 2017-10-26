@@ -1,4 +1,5 @@
 extern crate byteorder;
+extern crate dotenv;
 extern crate env_logger;
 #[macro_use]
 extern crate error_chain;
@@ -292,6 +293,7 @@ fn parse_response<T>(session: &mut Session,
 
 fn run() -> error::Result<()> {
     env_logger::init()?;
+    dotenv::dotenv().ok();  // Fail silently if no .env is present
     let mut core = Core::new()?;
 
     let auth_future = auth(core.handle());

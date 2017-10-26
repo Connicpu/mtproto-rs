@@ -3,6 +3,7 @@ Cargo.lock
 AppInfo.toml
 /src/schema.rs
 
+*.rs.bk
 *~
 [._]*.sw?
 [._]sw?

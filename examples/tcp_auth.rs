@@ -1,5 +1,6 @@
 extern crate byteorder;
 extern crate crc;
+extern crate dotenv;
 extern crate env_logger;
 #[macro_use]
 extern crate error_chain;
@@ -431,6 +432,7 @@ impl MtProtoTcpMode for AbridgedMode {
 
 fn run() -> error::Result<()> {
     env_logger::init()?;
+    dotenv::dotenv().ok();  // Fail silently if no .env is present
     let mut core = Core::new()?;
 
     let auth_future = auth(core.handle(), AbridgedMode::new());

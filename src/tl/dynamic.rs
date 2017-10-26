@@ -99,8 +99,16 @@ pub struct TLConstructor(TLConstructorType);
 
 impl fmt::Debug for TLConstructor {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        struct DummyForDebug;
+
+        impl fmt::Debug for DummyForDebug {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("TL constructor [boxed closure]")
+            }
+        }
+
         f.debug_tuple("TLConstructor")
-            .field(&"TL constructor [boxed closure]")
+            .field(&DummyForDebug)
             .finish()
     }
 }
