@@ -6,6 +6,7 @@ extern crate error_chain;
 extern crate extprim;
 extern crate futures;
 extern crate hyper;
+#[macro_use]
 extern crate log;
 extern crate mtproto;
 extern crate rand;
@@ -117,9 +118,9 @@ fn auth(handle: Handle) -> Box<Future<Item = (), Error = error::Error>> {
         }
 
         let pq_u64 = BigEndian::read_u64(&res_pq.pq);
-        println!("Decomposing pq = {}...", pq_u64);
+        info!("Decomposing pq = {}...", pq_u64);
         let (p_u32, q_u32) = tryf!(asymm::decompose_pq(pq_u64));
-        println!("Decomposed p = {}, q = {}", p_u32, q_u32);
+        info!("Decomposed p = {}, q = {}", p_u32, q_u32);
         let u32_to_vec = |num| {
             let mut v = vec![0; 4];
             BigEndian::write_u32(v.as_mut_slice(), num);
@@ -137,29 +138,29 @@ fn auth(handle: Handle) -> Box<Future<Item = (), Error = error::Error>> {
             new_nonce: rng.gen(),
         });
 
-        println!("Data to send: {:#?}", &p_q_inner_data);
+        info!("Data to send: {:#?}", &p_q_inner_data);
         let p_q_inner_data_serialized = tryf!(serde_mtproto::to_bytes(&p_q_inner_data));
-        println!("Data bytes to send: {:?}", &p_q_inner_data_serialized);
+        info!("Data bytes to send: {:?}", &p_q_inner_data_serialized);
         let known_sha1_fingerprints = tryf!(asymm::KNOWN_RAW_KEYS.iter()
             .map(|raw_key| {
                 let sha1_fingerprint = raw_key.read()?.sha1_fingerprint()?;
                 Ok(sha1_fingerprint.iter().map(|b| format!("{:02x}", b)).collect::<String>())
             })
             .collect::<error::Result<Vec<_>>>());
-        println!("Known public key SHA1 fingerprints: {:?}", known_sha1_fingerprints);
+        info!("Known public key SHA1 fingerprints: {:?}", known_sha1_fingerprints);
         let known_fingerprints = tryf!(asymm::KNOWN_RAW_KEYS.iter()
             .map(|raw_key| Ok(raw_key.read()?.fingerprint()?))
             .collect::<error::Result<Vec<_>>>());
-        println!("Known public key fingerprints: {:?}", known_fingerprints);
+        info!("Known public key fingerprints: {:?}", known_fingerprints);
         let server_pk_fingerprints = res_pq.server_public_key_fingerprints.inner().as_slice();
-        println!("Server public key fingerprints: {:?}", &server_pk_fingerprints);
+        info!("Server public key fingerprints: {:?}", &server_pk_fingerprints);
         let (rsa_public_key, fingerprint) =
             tryf!(asymm::find_first_key_fail_safe(server_pk_fingerprints));
-        println!("RSA public key used: {:#?}", &rsa_public_key);
+        info!("RSA public key used: {:#?}", &rsa_public_key);
         let encrypted_data = tryf!(rsa_public_key.encrypt(&p_q_inner_data_serialized));
-        println!("Encrypted data: {:?}", encrypted_data.as_ref());
+        info!("Encrypted data: {:?}", encrypted_data.as_ref());
         let encrypted_data2 = tryf!(rsa_public_key.encrypt2(&p_q_inner_data_serialized));
-        println!("Encrypted data 2: {:?}", &encrypted_data2);
+        info!("Encrypted data 2: {:?}", &encrypted_data2);
 
         let req_dh_params = schema::rpc::req_DH_params {
             nonce: res_pq.nonce,
@@ -210,9 +211,9 @@ fn create_http_request<T>(session: &mut Session,
         MessageType::PlainText => session.create_plain_text_message(data)?,
         MessageType::Encrypted => session.create_encrypted_message_no_acks(data)?.unwrap(),
     };
-    println!("Message to send: {:#?}", &message);
+    info!("Message to send: {:#?}", &message);
     let serialized_message = serde_mtproto::to_bytes(&message)?;
-    println!("Request bytes: {:?}", &serialized_message);
+    info!("Request bytes: {:?}", &serialized_message);
 
     // Here we do mean to unwrap since it should fail if something goes wrong anyway
     assert_eq!(message.size_hint().unwrap(), serialized_message.len());
@@ -229,7 +230,6 @@ fn create_http_request<T>(session: &mut Session,
         .headers_mut()
         .set(hyper::header::ContentLength(serialized_message.len() as u64));
 
-    //println!("{:?}", &serialized_message);
     request.set_body(serialized_message);
 
     Ok(request)
@@ -253,7 +253,7 @@ fn parse_response<T>(session: &mut Session,
                     -> error::Result<Message<T>>
     where T: Debug + DeserializeOwned
 {
-    println!("Response bytes: {:?}", &response_bytes);
+    info!("Response bytes: {:?}", &response_bytes);
 
     if let Ok(response_str) = str::from_utf8(response_bytes) {
         let response_str = response_str.trim();
@@ -262,7 +262,7 @@ fn parse_response<T>(session: &mut Session,
         if str_len >= 7 && &response_str[0..6] == "<html>" && &response_str[str_len-7..] == "</html>" {
             let response_str = str::from_utf8(response_bytes)?;
             let doc = Document::from(response_str);
-            println!("HTML error response:\n{}", response_str);
+            info!("HTML error response:\n{}", response_str);
 
             let error_text = match doc.find(Name("h1")).next() {
                 Some(elem) => elem.text(),
@@ -285,7 +285,7 @@ fn parse_response<T>(session: &mut Session,
     };
 
     let response = session.process_message(&response_bytes, encrypted_data_len)?;
-    println!("Message received: {:#?}", &response);
+    info!("Message received: {:#?}", &response);
 
     Ok(response)
 }

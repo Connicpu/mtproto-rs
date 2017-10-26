@@ -45,6 +45,8 @@ Based on [tokio](https://tokio.rs).
 
 ```sh
 $ cargo run --example tcp_auth
+# For verbose output use
+$ RUST_LOG=tcp_auth=info cargo run --example tcp_auth
 ```
 
 ### `http_auth`
@@ -55,6 +57,8 @@ Based on [tokio](https://tokio.rs) and [hyper](https://hyper.rs).
 
 ```sh
 $ cargo run --example http_auth
+# For verbose output use
+$ RUST_LOG=http_auth=info cargo run --example http_auth
 ```
 
 ### `dynamic`
@@ -63,6 +67,8 @@ Dynamic typing using `TLObject` in action.
 
 ```sh
 $ cargo run --example dynamic
+# For verbose output use
+$ RUST_LOG=dynamic=info cargo run --example dynamic
 ```
 
 You can also look at [tests](./tests/) for more use cases which are automatically tested.
