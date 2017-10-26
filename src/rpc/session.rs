@@ -1,6 +1,7 @@
 //! MTProto session.
 
 use std::cmp;
+use std::fmt;
 use std::mem;
 
 use chrono::{Timelike, Utc};
@@ -210,7 +211,7 @@ impl Session {
 
     /// Reads a `Message` from raw bytes.
     pub fn process_message<T>(&self, message_bytes: &[u8], encrypted_data_len: Option<u32>) -> error::Result<Message<T>>
-        where T: DeserializeOwned
+        where T: fmt::Debug + DeserializeOwned
     {
         use serde_mtproto::Deserializer;
 

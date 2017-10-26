@@ -137,7 +137,7 @@ impl<T: Identifiable + MtProtoSized> Message<T> {
 
 impl<T> Message<T> {
     fn to_raw_message<'msg>(&'msg self) -> error::Result<RawMessage<'msg, T>>
-        where T: Serialize
+        where T: fmt::Debug + Serialize
     {
         let raw_message = match *self {
             Message::PlainText { message_id, ref body } => {
@@ -149,6 +149,8 @@ impl<T> Message<T> {
             },
             Message::Decrypted { ref decrypted_data } => {
                 let decrypted_data_serialized = serde_mtproto::to_bytes(decrypted_data)?;
+                debug!("Serialized data to be encrypted: {:?}", &decrypted_data_serialized);
+
                 let (auth_key_id, msg_key, encrypted_data) = decrypted_data.key
                     .encrypt_message_bytes(&decrypted_data_serialized)?;
 
@@ -160,13 +162,15 @@ impl<T> Message<T> {
             },
         };
 
+        debug!("Resulting raw message: {:?}", &raw_message);
+
         Ok(raw_message)
     }
 
     fn from_raw_message<'msg>(raw_message: RawMessage<'msg, T>,
                               opt_key: Option<AuthKey>)
                              -> error::Result<Message<T>>
-        where T: DeserializeOwned
+        where T: fmt::Debug + DeserializeOwned
     {
        let message =  match raw_message {
             RawMessage::PlainText { auth_key_id, message_id, ref_body } => {
@@ -181,6 +185,8 @@ impl<T> Message<T> {
                 let key = opt_key.ok_or(ErrorKind::NoAuthKey)?;
                 let decrypted_data_serialized = key
                     .decrypt_message_bytes(auth_key_id, msg_key, &encrypted_data.into_inner())?;
+                debug!("Decrypted data to be deserialized: {:?}", &decrypted_data_serialized);
+
                 let mut decrypted_data: DecryptedData<T> =
                     serde_mtproto::from_reader(decrypted_data_serialized.as_slice(), None)?;
 
@@ -192,11 +198,13 @@ impl<T> Message<T> {
             },
         };
 
+        debug!("Message obtained from raw message: {:?}", &message);
+
         Ok(message)
     }
 }
 
-impl<T: Serialize> Serialize for Message<T> {
+impl<T: fmt::Debug + Serialize> Serialize for Message<T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where S: ser::Serializer
     {
@@ -225,7 +233,7 @@ impl<T: DeserializeOwned> MessageSeed<T> {
     }
 }
 
-impl<'de, T: DeserializeOwned> DeserializeSeed<'de> for MessageSeed<T> {
+impl<'de, T: fmt::Debug + DeserializeOwned> DeserializeSeed<'de> for MessageSeed<T> {
     type Value = Message<T>;
 
     fn deserialize<D>(self, deserializer: D) -> Result<Message<T>, D::Error>
@@ -237,7 +245,7 @@ impl<'de, T: DeserializeOwned> DeserializeSeed<'de> for MessageSeed<T> {
             phantom: PhantomData<T>,
         }
 
-        impl<'de, T: DeserializeOwned> Visitor<'de> for MessageVisitor<T> {
+        impl<'de, T: fmt::Debug + DeserializeOwned> Visitor<'de> for MessageVisitor<T> {
             type Value = Message<T>;
 
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {

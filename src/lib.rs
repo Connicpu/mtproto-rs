@@ -8,6 +8,8 @@ extern crate erased_serde;
 #[macro_use]
 extern crate error_chain;
 extern crate extprim;
+#[macro_use]
+extern crate log;
 extern crate num_traits;
 extern crate openssl;
 extern crate rand;

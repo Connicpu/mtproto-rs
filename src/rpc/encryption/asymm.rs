@@ -121,7 +121,7 @@ impl RsaPublicKey {
     pub fn encrypt(&self, input: &[u8]) -> error::Result<[u8; 256]> {
         let mut padded_input = sha1_and_or_pad(input, true, Padding::Total255Random)?;
         padded_input.insert(0, 0);    // OpenSSL requires exactly 256 bytes
-        println!("*** Padded input: {:?}", &padded_input);
+        debug!("Padded input: {:?}", &padded_input);
 
         let mut output = [0; 256];
         self.0.public_encrypt(&padded_input, &mut output, rsa::NO_PADDING)?;
@@ -134,7 +134,7 @@ impl RsaPublicKey {
     /// dependency after rewriting this method to use `num_bigint::BigUInt`.
     pub fn encrypt2(&self, input: &[u8]) -> error::Result<Vec<u8>> {
         let padded_input = sha1_and_or_pad(input, true, Padding::Total255Random)?;
-        println!("!!! Padded input: {:?}", &padded_input);
+        debug!("Padded input: {:?}", &padded_input);
 
         let n = self.0.n().ok_or(error::Error::from(ErrorKind::NoModulus))?;
         let e = self.0.e().ok_or(error::Error::from(ErrorKind::NoExponent))?;
@@ -204,6 +204,7 @@ fn ceil_isqrt(x: u64) -> u64 {
     let mut ret = (x as f64).sqrt().trunc() as u64;
     while ret * ret > x { ret -= 1; }
     while ret * ret < x { ret += 1; }
+    debug!("ceil_isqrt({}) == {}", x, ret);
     ret
 }
 
@@ -226,6 +227,8 @@ pub fn decompose_pq(pq: u64) -> error::Result<(u32, u32)> {
         }
         let p = safe_int_cast::<u64, u32>(pq_sqrt + y)?;
         let q = safe_int_cast::<u64, u32>(if pq_sqrt > y { pq_sqrt - y } else { y - pq_sqrt })?;
-        return Ok(if p > q {(q, p)} else {(p, q)});
+        let (p, q) = if p > q {(q, p)} else {(p, q)};
+        debug!("decompose_pq({}) = ({}, {})", pq, p, q);
+        return Ok((p, q))
     }
 }

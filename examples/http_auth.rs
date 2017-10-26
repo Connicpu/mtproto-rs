@@ -16,7 +16,7 @@ extern crate serde_mtproto;
 extern crate tokio_core;
 
 
-use std::fmt::Debug;
+use std::fmt;
 use std::str;
 
 use byteorder::{ByteOrder, BigEndian};
@@ -205,7 +205,7 @@ fn create_http_request<T>(session: &mut Session,
                           data: T,
                           message_type: MessageType)
                          -> error::Result<hyper::Request>
-    where T: Debug + Serialize + TLObject
+    where T: fmt::Debug + Serialize + TLObject
 {
     let message = match message_type {
         MessageType::PlainText => session.create_plain_text_message(data)?,
@@ -251,7 +251,7 @@ fn parse_response<T>(session: &mut Session,
                      response_bytes: &[u8],
                      message_type: MessageType)
                     -> error::Result<Message<T>>
-    where T: Debug + DeserializeOwned
+    where T: fmt::Debug + DeserializeOwned
 {
     info!("Response bytes: {:?}", &response_bytes);
 
