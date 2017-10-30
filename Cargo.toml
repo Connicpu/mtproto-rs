@@ -1,16 +1,42 @@
 [package]
 name = "mtproto"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["Connor Hilarides <connorcpu@live.com>"]
 license = "MIT/Apache-2.0"
 build = "build.rs"
 
 [dependencies]
-byteorder = "1"
+byteorder = "1.1"
 chrono = "0.4"
+envy = "0.3"
+erased-serde = "0.3"
 error-chain = "0.11"
-openssl = "0.9.17"
+extprim = "1.4"
+log = "0.3"
+num-traits = "0.1"
+openssl = "0.9.11"
 rand = "0.3"
+serde = "1.0"
+serde_bytes = "0.10"
+serde_derive = "1.0"
+serde_mtproto = { git = "https://github.com/hcpl/serde_mtproto", features = ["extprim"] }
+serde_mtproto_derive = { git = "https://github.com/hcpl/serde_mtproto" }
+toml = "0.4"
 
-[build-dependencies.tl_codegen]
-path = "tl_codegen"
+[build-dependencies]
+env_logger = "0.4"
+error-chain = "0.11"
+log = "0.3"
+tl_codegen = { path = "tl_codegen" }
+
+[dev-dependencies]
+crc = "1.5"
+dotenv = "0.10"
+env_logger = "0.4"
+futures = "0.1"
+hyper = "0.11"
+pretty_assertions = "0.4"
+select = "0.4"
+test-logger = "0.1"
+tokio-core = "0.1"
+tokio-io = "0.1"

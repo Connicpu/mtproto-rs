@@ -1,16 +1,30 @@
-use std::io;
+//! Asymmetric-key operations and facilities around them.
+
+use std::fmt;
 
 use byteorder::{LittleEndian, ByteOrder};
 use openssl::{bn, hash, rsa};
+use serde_bytes::ByteBuf;
+use serde_mtproto;
 
-use error::{ErrorKind, Result};
-use super::{AuthKey, Padding, sha1_and_or_pad};
+use error::{self, ErrorKind};
+use utils::safe_int_cast;
 
+use super::symm::AuthKey;
+use super::utils::{Padding, sha1_and_or_pad};
+
+
+/// RSA public key stored as **X.509 SubjectPublicKeyInfo/OpenSSL PEM
+/// public key**.
+///
+/// Relevant StackOverflow answer which explains why it's called like
+/// that: https://stackoverflow.com/a/29707204.
 #[derive(Debug)]
-pub struct RsaPublicKeyRef<'a>(&'a [u8]);
+pub struct RsaRawPublicKeyRef<'a>(&'a [u8]);
 
-pub const KNOWN_KEYS: &'static [RsaPublicKeyRef<'static>] = &[
-    RsaPublicKeyRef(b"\
+/// Set of raw keys known at compile-time.
+pub const KNOWN_RAW_KEYS: &'static [RsaRawPublicKeyRef<'static>] = &[
+    RsaRawPublicKeyRef(b"\
 -----BEGIN PUBLIC KEY-----\n\
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwVACPi9w23mF3tBkdZz+\n\
 zwrzKOaaQdr01vAbU4E1pvkfj4sqDsm6lyDONS789sVoD/xCS9Y0hkkC3gtL1tSf\n\
@@ -22,77 +36,162 @@ HwIDAQAB\n\
 -----END PUBLIC KEY-----"),
 ];
 
-impl<'a> RsaPublicKeyRef<'a> {
-    pub fn read(&self) -> Result<RsaPublicKey> {
+impl<'a> RsaRawPublicKeyRef<'a> {
+    pub fn read(&self) -> error::Result<RsaPublicKey> {
         let key = rsa::Rsa::public_key_from_pem(&self.0)?;
         Ok(RsaPublicKey(key))
     }
 }
 
-pub fn find_first_key(of_fingerprints: &[i64]) -> Result<Option<(RsaPublicKey, i64)>> {
-    let iter = KNOWN_KEYS.iter()
-        .map(|k| {
-            let key = k.read()?;
-            let fingerprint = key.fingerprint()?;
-            if of_fingerprints.contains(&fingerprint) {
-                Ok(Some((key, fingerprint)))
-            } else {
-                Ok(None)
-            }
-        });
-    for item in iter {
-        if let Some(x) = (item as Result<_>)? {
-            return Ok(Some(x))
-        }
-    }
-    Ok(None)
-}
 
+/// "Cooked" RSA key.
 pub struct RsaPublicKey(rsa::Rsa);
 
-impl RsaPublicKey {
-    pub fn sha1_fingerprint(&self) -> Result<Vec<u8>> {
-        let mut buf = io::Cursor::new(Vec::<u8>::new());
-        {
-            use tl::parsing::Writer;
-            let mut writer = ::tl::parsing::WriteContext::new(&mut buf);
-            writer.write_tl(&self.0.n().unwrap().to_vec())?;
-            writer.write_tl(&self.0.e().unwrap().to_vec())?;
+impl fmt::Debug for RsaPublicKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        struct RsaRepr<'a> {
+            n: Option<&'a bn::BigNumRef>,
+            e: Option<&'a bn::BigNumRef>,
         }
+
+        impl<'a> fmt::Debug for RsaRepr<'a> {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                let debug_option_big_num = |opt_big_num: Option<&bn::BigNumRef>| {
+                    match opt_big_num {
+                        Some(big_num) => match big_num.to_hex_str() {
+                            Ok(hex_str) => hex_str.to_lowercase(),
+                            Err(_) => big_num.to_vec().iter()
+                                .map(|byte| format!("{:02x}", byte)).collect::<String>(),
+                        },
+                        None => "(None)".to_owned(),
+                    }
+                };
+
+                f.debug_struct("RsaRepr")
+                    .field("n", &DisplayStr(&debug_option_big_num(self.n)))
+                    .field("e", &DisplayStr(&debug_option_big_num(self.e)))
+                    .finish()
+            }
+        }
+
+        struct DisplayStr<'a>(&'a str);
+
+        impl<'a> fmt::Debug for DisplayStr<'a> {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                fmt::Display::fmt(self.0, f)
+            }
+        }
+
+        let rsa_repr = RsaRepr {
+            n: self.0.n(),
+            e: self.0.e(),
+        };
+
+        f.debug_tuple("RsaPublicKey")
+            .field(&rsa_repr)
+            .finish()
+    }
+}
+
+
+impl RsaPublicKey {
+    pub fn sha1_fingerprint(&self) -> error::Result<Vec<u8>> {
+        let mut buf = Vec::new();
+
+        let n_bytes = self.0.n().ok_or(error::Error::from(ErrorKind::NoModulus))?.to_vec();
+        let e_bytes = self.0.e().ok_or(error::Error::from(ErrorKind::NoExponent))?.to_vec();
+
+        // Need to allocate new space, so use `&mut buf` instead of `buf.as_mut_slice()`
+        serde_mtproto::to_writer(&mut buf, &ByteBuf::from(n_bytes))?;
+        serde_mtproto::to_writer(&mut buf, &ByteBuf::from(e_bytes))?;
+
         let mut hasher = hash::Hasher::new(hash::MessageDigest::sha1())?;
-        hasher.update(&buf.into_inner())?;
+        hasher.update(&buf)?;
+
         Ok(hasher.finish2().map(|b| b.to_vec())?)
     }
 
-    pub fn fingerprint(&self) -> Result<i64> {
-        Ok(LittleEndian::read_i64(&self.sha1_fingerprint()?[12..20]))
+    pub fn fingerprint(&self) -> error::Result<i64> {
+        let sha1_fingerprint = self.sha1_fingerprint()?;
+
+        Ok(LittleEndian::read_i64(&sha1_fingerprint[12..20]))
     }
 
-    pub fn encrypt(&self, input: &[u8]) -> Result<Vec<u8>> {
-        let mut input = sha1_and_or_pad(input, true, Padding::Total255)?;
-        input.insert(0, 0);
-        let mut output = vec![0; 256];
-        self.0.public_encrypt(&input, &mut output, rsa::NO_PADDING)?;
+    /// Encrypts using the internal RSA key.
+    pub fn encrypt(&self, input: &[u8]) -> error::Result<[u8; 256]> {
+        let mut padded_input = sha1_and_or_pad(input, true, Padding::Total255Random)?;
+        padded_input.insert(0, 0);    // OpenSSL requires exactly 256 bytes
+        debug!("Padded input: {:?}", &padded_input);
+
+        let mut output = [0; 256];
+        self.0.public_encrypt(&padded_input, &mut output, rsa::NO_PADDING)?;
+
         Ok(output)
+    }
+
+    /// Other implementation of RSA encryption, just to verify that we are on the right track with
+    /// `encrypt()`. Also can be served as a drop-in replacement in case if we abandon OpenSSL
+    /// dependency after rewriting this method to use `num_bigint::BigUInt`.
+    pub fn encrypt2(&self, input: &[u8]) -> error::Result<Vec<u8>> {
+        let padded_input = sha1_and_or_pad(input, true, Padding::Total255Random)?;
+        debug!("Padded input: {:?}", &padded_input);
+
+        let n = self.0.n().ok_or(error::Error::from(ErrorKind::NoModulus))?;
+        let e = self.0.e().ok_or(error::Error::from(ErrorKind::NoExponent))?;
+
+        let bn_padded_input = bn::BigNum::from_slice(&padded_input)?;
+        let mut output = bn::BigNum::new()?;
+        let mut context = bn::BigNumContext::new()?;
+        output.mod_exp(&bn_padded_input, e, n, &mut context)?;
+
+        Ok(output.to_vec())
     }
 }
 
-pub fn calculate_auth_key(g: u32, dh_prime: &[u8], g_a: &[u8]) -> Result<(AuthKey, Vec<u8>)> {
+/// Flat version of `find_first_key` function.
+///
+/// Upon failure to find a suitable key, it returns an error rather than
+/// `None`.
+pub fn find_first_key_fail_safe(of_fingerprints: &[i64]) -> error::Result<(RsaPublicKey, i64)> {
+    find_first_key(of_fingerprints)?
+        .ok_or(ErrorKind::NoRsaPublicKeyForFingerprints(of_fingerprints.to_vec()).into())
+}
+
+/// Find a key fingerprint of which can be found in the supplied
+/// sequence of fingerprints.
+pub fn find_first_key(of_fingerprints: &[i64]) -> error::Result<Option<(RsaPublicKey, i64)>> {
+    for raw_key in KNOWN_RAW_KEYS {
+        let key = raw_key.read()?;
+        let fingerprint = key.fingerprint()?;
+
+        if of_fingerprints.contains(&fingerprint) {
+            return Ok(Some((key, fingerprint)));
+        }
+    }
+
+    Ok(None)
+}
+
+pub fn calculate_auth_key(g: u32, dh_prime: &[u8], g_a: &[u8]) -> error::Result<(AuthKey, Vec<u8>)> {
     let mut ctx = bn::BigNumContext::new()?;
     let g = bn::BigNum::from_u32(g)?;
     let dh_prime = bn::BigNum::from_slice(dh_prime)?;
     let g_a = bn::BigNum::from_slice(g_a)?;
+
     loop {
         let mut b = bn::BigNum::new()?;
         b.rand(2048, bn::MSB_MAYBE_ZERO, false)?;
         let mut g_b = bn::BigNum::new()?;
         g_b.mod_exp(&g, &b, &dh_prime, &mut ctx)?;
-        if g_b.num_bytes() as usize != super::AUTH_KEY_SIZE || g_b >= dh_prime {
+        // .num_bytes() returns i32 and AUTH_KEY_SIZE is usize, so use u64 since it embraces
+        // both i32 and usize (until 128-bit machines are in the wild)
+        if g_b.num_bytes() as u64 != super::AUTH_KEY_SIZE as u64 || g_b >= dh_prime {
             continue;
         }
         let mut auth_key = bn::BigNum::new()?;
         auth_key.mod_exp(&g_a, &b, &dh_prime, &mut ctx)?;
-        if auth_key.num_bytes() as usize != super::AUTH_KEY_SIZE {
+        // Same here
+        if auth_key.num_bytes() as u64 != super::AUTH_KEY_SIZE as u64 {
             continue;
         }
         let auth_key = AuthKey::new(&auth_key.to_vec())?;
@@ -100,26 +199,36 @@ pub fn calculate_auth_key(g: u32, dh_prime: &[u8], g_a: &[u8]) -> Result<(AuthKe
     }
 }
 
-fn isqrt(x: u64) -> u64 {
+
+fn ceil_isqrt(x: u64) -> u64 {
     let mut ret = (x as f64).sqrt().trunc() as u64;
     while ret * ret > x { ret -= 1; }
     while ret * ret < x { ret += 1; }
+    debug!("ceil_isqrt({}) == {}", x, ret);
     ret
 }
 
-pub fn decompose_pq(pq: u64) -> Result<(u32, u32)> {
-    let mut pq_sqrt = isqrt(pq);
+/// Decomposes a large composite number into 2 primes.
+///
+/// Uses [Fermat's factorization method][fermat].
+///
+/// [fermat]: https://en.wikipedia.org/wiki/Fermat%27s_factorization_method
+pub fn decompose_pq(pq: u64) -> error::Result<(u32, u32)> {
+    let mut pq_sqrt = ceil_isqrt(pq);
+
     loop {
         let y_sqr = pq_sqrt * pq_sqrt - pq;
-        if y_sqr == 0 { return Err(ErrorKind::FactorizationFailure.into()) }
-        let y = isqrt(y_sqr);
-        if y + pq_sqrt >= pq { return Err(ErrorKind::FactorizationFailure.into()) }
+        if y_sqr == 0 { bail!(ErrorKind::FactorizationFailureSquarePq(pq)) }
+        let y = ceil_isqrt(y_sqr);
+        if y + pq_sqrt >= pq { bail!(ErrorKind::FactorizationFailureOther(pq)) }
         if y * y != y_sqr {
             pq_sqrt += 1;
             continue;
         }
-        let p = (pq_sqrt + y) as u32;
-        let q = (if pq_sqrt > y { pq_sqrt - y } else { y - pq_sqrt }) as u32;
-        return Ok(if p > q {(q, p)} else {(p, q)});
+        let p = safe_int_cast::<u64, u32>(pq_sqrt + y)?;
+        let q = safe_int_cast::<u64, u32>(if pq_sqrt > y { pq_sqrt - y } else { y - pq_sqrt })?;
+        let (p, q) = if p > q {(q, p)} else {(p, q)};
+        debug!("decompose_pq({}) = ({}, {})", pq, p, q);
+        return Ok((p, q))
     }
 }

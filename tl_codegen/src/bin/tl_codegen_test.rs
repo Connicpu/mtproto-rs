@@ -2,8 +2,17 @@ extern crate tl_codegen;
 
 use std::io::Read;
 
+
 fn main() {
     let mut input = String::new();
     std::io::stdin().read_to_string(&mut input).unwrap();
-    println!("{}", tl_codegen::generate_code_for(&input));
+    println!("{}", generate_from_input(&input));
+}
+
+fn generate_from_input(input: &str) -> String {
+    tl_codegen::generate_code_for(input).into_string()
+}
+
+fn generate_from_input(input: &str) -> String {
+    format!("{:?}", tl_codegen::generate_items_for(input))
 }

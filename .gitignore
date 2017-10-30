@@ -1,8 +1,9 @@
 target
 Cargo.lock
-ApiInfo.toml
+AppInfo.toml
 /src/schema.rs
 
+*.rs.bk
 *~
 [._]*.sw?
 [._]sw?

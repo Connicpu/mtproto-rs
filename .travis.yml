@@ -1,0 +1,23 @@
+language: rust
+
+rust:
+  - 1.19.0
+  - stable
+  - beta
+  - nightly
+
+matrix:
+  allow_failures:
+    - rust: nightly
+
+cache: cargo
+
+env:
+  global:
+    - RUST_BACKTRACE=1
+
+script:
+  - pwd
+  - ls -la
+  - cargo test --verbose --all
+  - cargo build --verbose --all --examples
